@@ -3,6 +3,7 @@
  * "Fix with AI" code actions, model lifecycle and editor options.
  */
 import * as monaco from 'monaco-editor'
+import { loader } from '@monaco-editor/react'
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
 import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker'
@@ -22,6 +23,10 @@ let configured = false
 export function setupMonaco(): void {
   if (configured) return
   configured = true
+
+  // Use the locally bundled Monaco (not the @monaco-editor/react CDN loader),
+  // so the editor works fully offline and inside the packaged app.
+  loader.config({ monaco })
 
   ;(self as any).MonacoEnvironment = {
     getWorker(_workerId: string, label: string) {

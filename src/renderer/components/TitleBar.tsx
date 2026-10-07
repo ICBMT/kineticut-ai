@@ -247,7 +247,5 @@ export function TitleBar() {
 }
 
 function DropdownMenuButton({ label, items }: { label: string; items: MenuItem[] }) {
-  // Local import avoided at module top to keep this file focused.
-  const { Dropdown } = require('./ui') as typeof import('./ui')
   return <Dropdown trigger={<button className="tb-menu-btn">{label}</button>} items={items} />
 }

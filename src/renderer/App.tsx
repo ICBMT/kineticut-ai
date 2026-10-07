@@ -8,6 +8,7 @@ import { applyTheme, useSettingsStore } from './store/settings'
 import { useAppStore } from './store/app'
 import { ActivityBar } from './components/ActivityBar'
 import { CommandPalette } from './components/CommandPalette'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { ConfirmModal, DiffModal, PromptModal } from './components/modals'
 import { EditorArea } from './components/EditorArea'
 import { QuickOpen } from './components/QuickOpen'
@@ -111,23 +112,25 @@ export function App() {
   }
 
   return (
-    <div className="app">
-      <TitleBar />
-      <div className="app-body">
-        <ActivityBar />
-        {sidebarVisible && <SideBar />}
-        <div className="app-main">
-          <EditorArea />
-          <TerminalPanel />
+    <ErrorBoundary>
+      <div className="app">
+        <TitleBar />
+        <div className="app-body">
+          <ActivityBar />
+          {sidebarVisible && <SideBar />}
+          <div className="app-main">
+            <EditorArea />
+            <TerminalPanel />
+          </div>
         </div>
+        <StatusBar />
+        <CommandPalette />
+        <QuickOpen />
+        <Toasts />
+        <DiffModal />
+        <ConfirmModal />
+        <PromptModal />
       </div>
-      <StatusBar />
-      <CommandPalette />
-      <QuickOpen />
-      <Toasts />
-      <DiffModal />
-      <ConfirmModal />
-      <PromptModal />
-    </div>
+    </ErrorBoundary>
   )
 }
