@@ -19,6 +19,9 @@ export function DiffModal() {
 
   if (!req) return null
 
+  // Without onApply the diff is a read-only review (e.g. Show Changes).
+  const readOnly = !req.onApply
+
   const cancel = () => {
     req.resolve(false)
     clearDiff()
@@ -58,14 +61,20 @@ export function DiffModal() {
         </span>
       }
       footer={
-        <>
-          <button className="btn" onClick={cancel}>
-            Cancel
+        readOnly ? (
+          <button className="btn btn-primary" onClick={cancel}>
+            Close
           </button>
-          <button className="btn btn-primary" onClick={() => void apply()}>
-            Apply changes
-          </button>
-        </>
+        ) : (
+          <>
+            <button className="btn" onClick={cancel}>
+              Cancel
+            </button>
+            <button className="btn btn-primary" onClick={() => void apply()}>
+              Apply changes
+            </button>
+          </>
+        )
       }
     >
       <DiffEditor
@@ -73,7 +82,7 @@ export function DiffModal() {
         modified={modified}
         language={req.language}
         theme={monacoThemeName()}
-        options={diffEditorOptions()}
+        options={{ ...diffEditorOptions(), readOnly }}
         height="62vh"
         onMount={(editor: any) => {
           diffRef.current = editor

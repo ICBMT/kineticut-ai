@@ -10,6 +10,7 @@ import {
   BrainCircuit,
   Database,
   FileCode,
+  FileDiff,
   FilePlus,
   FolderOpen,
   GitBranch,
@@ -45,7 +46,8 @@ import { editorRef } from './lib/editorRef'
 import { persistTab } from './lib/saveFile'
 import { prescanProject } from './lib/projectKnowledge'
 import { refreshProjectBrief } from './lib/projectBrief'
-import { basename, joinPath, sleep } from './lib/utils'
+import { basename, joinPath, relativePath, sleep } from './lib/utils'
+import { showGitChanges } from './lib/gitChanges'
 import { useAppStore } from './store/app'
 import { useAIStore } from './store/ai'
 import { useEditorStore } from './store/editor'
@@ -300,6 +302,32 @@ export const COMMANDS: Command[] = [
   // Settings / app
   { id: 'settings.open', title: 'Settings', category: 'Preferences', icon: Settings, shortcut: 'Ctrl+,', keywords: 'preferences providers models', run: () => useAppStore.getState().setSidebarView('settings') },
   { id: 'git.refresh', title: 'Refresh Git Status', category: 'Git', icon: RotateCcw, keywords: 'source control', run: () => useAppStore.getState().refreshGit() },
+  {
+    id: 'git.showChanges',
+    title: 'Git: Show Changes',
+    category: 'Git',
+    icon: FileDiff,
+    keywords: 'diff compare head working tree source control changes',
+    run: () => {
+      const app = useAppStore.getState()
+      const tab = useEditorStore.getState().activeTab()
+      if (!app.folder || !tab) {
+        app.toast({
+          kind: 'info',
+          title: 'Open a file first',
+          message: 'Show Changes compares the active file with HEAD.',
+          duration: 2400,
+        })
+        return
+      }
+      const rel = relativePath(app.folder, tab.path)
+      if (rel === tab.path) {
+        app.toast({ kind: 'warning', title: 'File is outside the project', duration: 2400 })
+        return
+      }
+      void showGitChanges(app.folder, rel)
+    },
+  },
 ]
 
 export function runCommand(id: string): void {

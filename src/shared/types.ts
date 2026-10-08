@@ -61,6 +61,19 @@ export interface GitFile {
   status: string
 }
 
+/** HEAD vs working-tree content for one file ("Show changes"). */
+export interface GitFileDiff {
+  path: string
+  /** added: not in HEAD (new or untracked) · deleted: gone from disk · unchanged · modified */
+  status: 'added' | 'deleted' | 'modified' | 'unchanged'
+  original: string
+  modified: string
+  /** Binary files have no text diff; the strings are empty. */
+  binary: boolean
+  /** Files over the size limit are not loaded into the diff. */
+  tooLarge: boolean
+}
+
 export interface GitStatus {
   root: string
   branch: string | null
@@ -184,6 +197,8 @@ export interface KineticAPI {
     discard(root: string, paths: string[]): Promise<void>
     commit(root: string, message: string): Promise<void>
     init(root: string): Promise<void>
+    /** HEAD vs the working file, for a single repo-relative path. */
+    show(root: string, path: string): Promise<GitFileDiff>
   }
   terminal: {
     create(opts: TerminalOptions): Promise<{ id: string }>

@@ -597,6 +597,15 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true })
     }
 
+    if (path === '/api/git/show' && method === 'GET') {
+      const root = url.searchParams.get('root') || ROOT
+      try {
+        return sendJson(res, 200, await gitShowDiff(root, url.searchParams.get('path') || ''))
+      } catch (err) {
+        return sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) })
+      }
+    }
+
     /* ------------------------------- terminal ------------------------------- */
     if (path === '/api/term' && method === 'POST') {
       const opts = await readJson(req)
@@ -748,3 +757,53 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`[kineticut] dev API server listening on http://0.0.0.0:${PORT} (root: ${ROOT})`)
   console.log(`[kineticut] node-pty: ${nodePty ? 'available' : 'not available (using fallback)'}`)
 })
+
+/* ------------------------------ git: show changes ----------------------------- */
+
+const GIT_SHOW_MAX_BYTES = 2 * 1024 * 1024
+
+/** Resolve a repo-relative path and refuse anything that escapes the root. */
+function resolveInsideRoot(root, rel) {
+  if (!rel || rel.startsWith('/') || /^[A-Za-z]:/.test(rel)) throw new Error('Invalid path')
+  const abs = join(root, rel)
+  const back = relative(root, abs)
+  if (!back || back.startsWith('..')) throw new Error('Path is outside the project')
+  return abs
+}
+
+/** HEAD vs working-tree content for one file. Missing sides are empty. */
+async function gitShowDiff(root, rel) {
+  const abs = resolveInsideRoot(root, rel)
+  const git = simpleGit(root)
+  let original = ''
+  let inHead = true
+  try {
+    original = await git.raw(['show', `HEAD:${rel}`])
+  } catch {
+    inHead = false
+  }
+  let modified = ''
+  let onDisk = true
+  let tooLarge = false
+  let buf = null
+  try {
+    const st = await fs.stat(abs)
+    if (st.size > GIT_SHOW_MAX_BYTES) tooLarge = true
+    else buf = await fs.readFile(abs)
+  } catch {
+    onDisk = false
+  }
+  if (!inHead && !onDisk) throw new Error(`Not a tracked or existing file: ${rel}`)
+  if (buf) modified = buf.toString('utf8')
+  const binary =
+    (buf ? buf.subarray(0, 8000).includes(0) : false) || original.slice(0, 8000).includes('\u0000')
+  const status = !inHead && onDisk
+    ? 'added'
+    : inHead && !onDisk
+      ? 'deleted'
+      : original === modified
+        ? 'unchanged'
+        : 'modified'
+  if (binary || tooLarge) return { path: rel, status, original: '', modified: '', binary, tooLarge }
+  return { path: rel, status, original, modified, binary: false, tooLarge: false }
+}

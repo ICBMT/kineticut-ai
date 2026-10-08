@@ -8,6 +8,7 @@ import type {
   FileEntry,
   FileTree,
   FsEvent,
+  GitFileDiff,
   GitStatus,
   KineticAPI,
   NetRequest,
@@ -146,6 +147,7 @@ export function createHttpApi(): KineticAPI {
       discard: (root, paths) => post<any>('/api/git/discard', { root, paths }),
       commit: (root, message) => post<any>('/api/git/commit', { root, message }),
       init: (root) => post<any>('/api/git/init', { root }),
+      show: (root, path) => http<GitFileDiff>(`/api/git/show${qs({ root, path })}`),
     },
     terminal: {
       create: async (opts: TerminalOptions) => {

@@ -12,6 +12,7 @@ import type {
   FileEntry,
   FileTree,
   FsEvent,
+  GitFileDiff,
   GitStatus,
   NetRequest,
   SearchResult,
@@ -436,6 +437,57 @@ async function readSettings(): Promise<SettingsBag> {
 
 /* --------------------------------- register --------------------------------- */
 
+
+
+/* ---------------------------- git: show changes ---------------------------- */
+
+const GIT_SHOW_MAX_BYTES = 2 * 1024 * 1024
+
+/** Resolve a repo-relative path and refuse anything that escapes the root. */
+function resolveInsideRoot(root: string, rel: string): string {
+  if (!rel || rel.startsWith('/') || /^[A-Za-z]:/.test(rel)) throw new Error('Invalid path')
+  const abs = join(root, rel)
+  const back = relative(root, abs)
+  if (!back || back.startsWith('..')) throw new Error('Path is outside the project')
+  return abs
+}
+
+/** HEAD vs working-tree content for one file. Missing sides are empty. */
+async function gitShowDiff(root: string, rel: string): Promise<GitFileDiff> {
+  const abs = resolveInsideRoot(root, rel)
+  const git = simpleGit(root)
+  let original = ''
+  let inHead = true
+  try {
+    original = await git.raw(['show', `HEAD:${rel}`])
+  } catch {
+    inHead = false
+  }
+  let modified = ''
+  let onDisk = true
+  let tooLarge = false
+  let buf: Buffer | null = null
+  try {
+    const st = await fs.stat(abs)
+    if (st.size > GIT_SHOW_MAX_BYTES) tooLarge = true
+    else buf = await fs.readFile(abs)
+  } catch {
+    onDisk = false
+  }
+  if (!inHead && !onDisk) throw new Error(`Not a tracked or existing file: ${rel}`)
+  if (buf) modified = buf.toString('utf8')
+  const binary = (buf ? looksBinary(buf) : false) || original.slice(0, 8000).includes('\u0000')
+  const status: GitFileDiff['status'] = !inHead && onDisk
+    ? 'added'
+    : inHead && !onDisk
+      ? 'deleted'
+      : original === modified
+        ? 'unchanged'
+        : 'modified'
+  if (binary || tooLarge) return { path: rel, status, original: '', modified: '', binary, tooLarge }
+  return { path: rel, status, original, modified, binary: false, tooLarge: false }
+}
+
 export function registerIpc(getWin: () => BrowserWindow | null) {
   /* --------------------------------- system --------------------------------- */
 
@@ -718,6 +770,10 @@ export function registerIpc(getWin: () => BrowserWindow | null) {
 
   ipcMain.handle('git:init', async (_e, root: string) => {
     await simpleGit(root).init()
+  })
+
+  ipcMain.handle('git:show', async (_e, payload: { root: string; path: string }) => {
+    return gitShowDiff(payload.root, payload.path)
   })
 
   /* -------------------------------- terminal -------------------------------- */

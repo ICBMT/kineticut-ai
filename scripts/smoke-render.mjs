@@ -353,6 +353,47 @@ async function main() {
   }
   checks.push(['editor: one save path, autosave after a pause, breadcrumbs & language labels', editorOk])
 
+  // Git "Show changes": HEAD vs working file, path-safe, read-only diff modal.
+  let gitShowOk = false
+  const gitRoot = '/home/user/kineticut-ai'
+  const gitProbe = '.smoke-gitshow.txt'
+  try {
+    const fsNode = await import('node:fs')
+    fsNode.writeFileSync(`${gitRoot}/${gitProbe}`, 'probe line\n')
+    const d = await apiMod.api.git.show(gitRoot, gitProbe)
+    let escaped = false
+    try {
+      await apiMod.api.git.show(gitRoot, '../../etc/passwd')
+    } catch {
+      escaped = true
+    }
+    let missing = false
+    try {
+      await apiMod.api.git.show(gitRoot, '.smoke-does-not-exist.ts')
+    } catch {
+      missing = true
+    }
+    const gitMod = await server.ssrLoadModule('/lib/gitChanges.ts')
+    await gitMod.showGitChanges(gitRoot, gitProbe)
+    const req = useAppStore.getState().diffRequest
+    const readOnlyOk = !!req && !req.onApply && req.title === 'New file (not in HEAD)'
+    useAppStore.getState().clearDiff()
+    gitShowOk =
+      d.status === 'added' && d.original === '' && d.modified === 'probe line\n' && escaped && missing && readOnlyOk
+    if (!gitShowOk)
+      console.log('  (git debug:', JSON.stringify({ status: d.status, escaped, missing, readOnlyOk }), ')')
+  } catch (err) {
+    console.log('  (git checks error:', String(err).slice(0, 200), ')')
+  } finally {
+    try {
+      const fsNode = await import('node:fs')
+      fsNode.rmSync(`${gitRoot}/${gitProbe}`, { force: true })
+    } catch {
+      /* ignore */
+    }
+  }
+  checks.push(['git: show changes diffs HEAD vs working file (read-only, path-safe)', gitShowOk])
+
   // Chat ergonomics: slash commands and @file mentions are pure helpers; regenerate
   // and edit-and-resend re-run the real turn pipeline on the same session.
   let chatActionsOk = false

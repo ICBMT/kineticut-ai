@@ -85,6 +85,7 @@ const api: KineticAPI = {
     discard: (root, paths: string[]) => ipcRenderer.invoke('git:discard', { root, paths }),
     commit: (root, message) => ipcRenderer.invoke('git:commit', { root, message }),
     init: (root) => ipcRenderer.invoke('git:init', root),
+    show: (root, path: string) => ipcRenderer.invoke('git:show', { root, path }),
   },
   terminal: {
     create: (opts: TerminalOptions) => ipcRenderer.invoke('term:create', opts),

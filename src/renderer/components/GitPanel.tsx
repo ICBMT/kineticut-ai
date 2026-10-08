@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   ChevronDown,
   ChevronRight,
+  FileDiff,
   GitBranch,
   Minus,
   Plus,
@@ -11,6 +12,7 @@ import {
 import { api } from '../api'
 import type { GitFile } from '../../shared/types'
 import { useAppStore } from '../store/app'
+import { showGitChanges } from '../lib/gitChanges'
 import { EmptyState, IconButton, Spinner } from './ui'
 
 function statusLetter(file: GitFile, section: 'staged' | 'unstaged'): string {
@@ -23,12 +25,14 @@ function FileRow({
   onStage,
   onUnstage,
   onDiscard,
+  onShow,
 }: {
   file: GitFile
   section: 'staged' | 'unstaged'
   onStage(path: string): void
   onUnstage(path: string): void
   onDiscard(path: string): void
+  onShow(path: string): void
 }) {
   const letter = statusLetter(file, section)
   const color =
@@ -47,7 +51,32 @@ function FileRow({
       >
         {letter}
       </span>
-      <span className="fname flex-1">{file.path}</span>
+      <span
+        className="fname flex-1 cursor-pointer hover:underline"
+        role="button"
+        tabIndex={0}
+        title="Show changes vs HEAD"
+        onClick={() => onShow(file.path)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onShow(file.path)
+          }
+        }}
+      >
+        {file.path}
+      </span>
+      <button
+        className="hidden group-hover:flex shrink-0 w-5 h-5 items-center justify-center rounded text-[var(--text-faint)] hover:bg-[var(--bg-active)] hover:text-[var(--text)]"
+        title="Show changes"
+        aria-label={`Show changes for ${file.path}`}
+        onClick={(e) => {
+          e.stopPropagation()
+          onShow(file.path)
+        }}
+      >
+        <FileDiff size={12} />
+      </button>
       <button
         className="hidden group-hover:flex shrink-0 w-5 h-5 items-center justify-center rounded text-[var(--text-faint)] hover:bg-[var(--bg-active)] hover:text-[var(--red)]"
         title="Discard changes"
@@ -80,6 +109,7 @@ function Section({
   onStage,
   onUnstage,
   onDiscard,
+  onShow,
 }: {
   title: string
   files: GitFile[]
@@ -87,6 +117,7 @@ function Section({
   onStage(path: string): void
   onUnstage(path: string): void
   onDiscard(path: string): void
+  onShow(path: string): void
 }) {
   const [open, setOpen] = useState(true)
   if (files.length === 0) return null
@@ -109,6 +140,7 @@ function Section({
               onStage={onStage}
               onUnstage={onUnstage}
               onDiscard={onDiscard}
+              onShow={onShow}
             />
           ))}
         </div>
@@ -217,6 +249,10 @@ export function GitPanel() {
     }
   }, [folder, refreshGit])
 
+  const showChanges = (path: string) => {
+    if (folder) void showGitChanges(folder, path)
+  }
+
   if (!folder) {
     return (
       <div className="sidebar-inner">
@@ -314,6 +350,7 @@ export function GitPanel() {
           onStage={(p) => void stage([p])}
           onUnstage={(p) => void unstage([p])}
           onDiscard={(p) => void discard([p])}
+          onShow={showChanges}
         />
         <Section
           title="Changes"
@@ -322,6 +359,7 @@ export function GitPanel() {
           onStage={(p) => void stage([p])}
           onUnstage={(p) => void unstage([p])}
           onDiscard={(p) => void discard([p])}
+          onShow={showChanges}
         />
         {git.staged.length === 0 && unstaged.length === 0 && (
           <div className="px-3 py-4 text-xs text-[var(--text-faint)] italic">
