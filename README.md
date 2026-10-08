@@ -28,13 +28,18 @@ models via **Ollama**, frontier models (Claude, GPT, Gemini, …) via API. Built
   configured side (left/right, swappable in Settings → Layout).
 - **Inline completions** — AI ghost text as you type (Tab to accept), powered by the
   model of your choice.
+- **Chat ergonomics** — copy, regenerate, edit-and-resend the last prompt, retry on
+  error, `/explain` `/tests` `/review` `/fix` `/docs` `/clear` slash commands, and an
+  `@file` picker over the project index.
 - **AI code actions** — *Explain* (Ctrl+I), *Refactor selection*, *Generate tests*,
   and a **✦ Fix with AI** quick-fix on editor warnings/errors. Heavy edits are always
   reviewed in a diff modal first.
 - **IDE-grade editing** — Monaco (the VS Code editor engine) with TypeScript
   IntelliSense, dirty tracking, quick open (Ctrl+P), command palette (Ctrl+Shift+P),
   custom dark/light themes, format document (Ctrl+Shift+I), go to line (Ctrl+G),
-  format-on-save.
+  format-on-save. **Autosave** (off / after a pause / when the editor loses focus),
+  **breadcrumbs** above the editor, and a status bar showing the real language,
+  indentation, line endings and encoding.
 - **Multitasking** — **split editor groups** (side-by-side or stacked, up to 4),
   drag tabs between groups, double-click a tab to split it, "Open to the Side"
   from the explorer, and sessions (open tabs & layout) restored on restart.
@@ -44,6 +49,7 @@ models via **Ollama**, frontier models (Claude, GPT, Gemini, …) via API. Built
   direction — all live, all persisted.
 - **Explorer / Search / Git** — lazy file tree with create/rename/delete, ripgrep
   workspace search, and a source-control panel (stage, unstage, commit, discard).
+  Click any changed file (or use **Git: Show Changes**) to review it against HEAD.
 - **Integrated terminal** — real PTY (node-pty, with automatic fallbacks), multiple
   tabs, resizable panel (Ctrl+`), dockable bottom or right.
 - **Works for any project** — open any folder; language support comes from Monaco's
@@ -90,6 +96,8 @@ built-in **mock Ollama** so the whole AI pipeline works out of the box.
 | `Ctrl+Shift+I` | Format document |
 | `Ctrl+G` | Go to line |
 | `Ctrl+,` | Settings |
+| `Ctrl+Alt+L` | Focus the AI chat input |
+| `Ctrl+Alt+/` | Keyboard shortcuts reference (searchable) |
 | `Tab` | Accept inline completion |
 
 ## Project layout
