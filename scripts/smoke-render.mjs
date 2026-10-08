@@ -306,6 +306,53 @@ async function main() {
   }
   checks.push(['live activity: a turn records phases, files read, reasoning, tool calls & timing', activityOk])
 
+  // Editor: one save path (write + clean + snapshot), autosave after a delay,
+  // breadcrumbs and language labels.
+  let editorOk = false
+  const autoFile = '/home/user/kineticut-ai/.smoke-autosave.txt'
+  try {
+    const fsNode = await import('node:fs')
+    const saveMod = await server.ssrLoadModule('/lib/saveFile.ts')
+    const crumbsMod = await server.ssrLoadModule('/lib/breadcrumbs.ts')
+    const langsMod = await server.ssrLoadModule('/lib/languages.ts')
+    const editorMod = await server.ssrLoadModule('/store/editor.ts')
+    const es = editorMod.useEditorStore
+    fsNode.writeFileSync(autoFile, 'original')
+    editorMod.setSnapshot(autoFile, 'original')
+    es.getState().markDirty(autoFile, true)
+    await saveMod.persistTab(autoFile, 'saved text')
+    const manualOk =
+      fsNode.readFileSync(autoFile, 'utf8') === 'saved text' &&
+      !es.getState().isDirty(autoFile) &&
+      editorMod.getSnapshot(autoFile) === 'saved text'
+    // Autosave: the latest content is written once typing pauses.
+    const fakeModel = { value: 'typed later', getValue() { return this.value }, isDisposed: () => false }
+    es.getState().markDirty(autoFile, true)
+    saveMod.scheduleAutoSave(autoFile, fakeModel, 150)
+    await sleep(60)
+    fakeModel.value = 'typed latest'
+    saveMod.scheduleAutoSave(autoFile, fakeModel, 150) // restarts the timer
+    await sleep(400)
+    const autoOk = fsNode.readFileSync(autoFile, 'utf8') === 'typed latest' && !es.getState().isDirty(autoFile)
+    const crumbs = crumbsMod.breadcrumbs('/home/user/kineticut-ai/src/renderer/App.tsx', '/home/user/kineticut-ai')
+    const crumbsOk =
+      crumbs.map((c) => c.label).join('/') === 'src/renderer/App.tsx' &&
+      crumbs[crumbs.length - 1].isFile === true &&
+      crumbs[0].path === '/home/user/kineticut-ai/src'
+    editorOk = manualOk && autoOk && crumbsOk && langsMod.languageLabel('typescript') === 'TypeScript'
+    if (!editorOk) console.log('  (editor debug:', JSON.stringify({ manualOk, autoOk, crumbsOk }), ')')
+  } catch (err) {
+    console.log('  (editor checks error:', String(err).slice(0, 200), ')')
+  } finally {
+    try {
+      const fsNode = await import('node:fs')
+      fsNode.rmSync(autoFile, { force: true })
+    } catch {
+      /* ignore */
+    }
+  }
+  checks.push(['editor: one save path, autosave after a pause, breadcrumbs & language labels', editorOk])
+
   // Chat ergonomics: slash commands and @file mentions are pure helpers; regenerate
   // and edit-and-resend re-run the real turn pipeline on the same session.
   let chatActionsOk = false

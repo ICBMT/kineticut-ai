@@ -197,8 +197,10 @@ function startWatching(state) {
       try {
         const st = await fs.stat(p)
         if (!st.isFile()) return
-        const prev = state.byRel.get(rel)
         const file = await buildEntry(p, rel, st.size, st.mtimeMs)
+        // Read `prev` AFTER the await: two watcher events (add + change) for the
+        // same file can race here, and reading earlier pushed the file twice.
+        const prev = state.byRel.get(rel)
         if (prev?.summary && prev.summaryAt && prev.mtime === st.mtimeMs) {
           file.summary = prev.summary
           file.summaryAt = prev.summaryAt
@@ -298,7 +300,7 @@ export async function projectIndexSnapshot(root) {
     purpose: derivePurpose(packageJson, readme),
     gitBranch,
     scannedAt: state.scannedAt || Date.now(),
-    entries: state.files,
+    entries: uniqueByRel(state.files),
   }
 }
 
@@ -328,4 +330,10 @@ export async function rescanProjectIndex(root) {
     await state.scanning
   }
   return projectIndexSnapshot(root)
+}
+
+/** One entry per relative path (guards against duplicates from older caches). */
+function uniqueByRel(files) {
+  const seen = new Set()
+  return files.filter((f) => (seen.has(f.rel) ? false : (seen.add(f.rel), true)))
 }

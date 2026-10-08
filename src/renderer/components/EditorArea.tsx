@@ -14,6 +14,8 @@ import {
 } from 'lucide-react'
 import { api } from '../api'
 import { attachSelectionToChat } from '../lib/aiActions'
+import { autoSaveNow, scheduleAutoSave } from '../lib/saveFile'
+import { EditorBreadcrumbs } from './Breadcrumbs'
 import { editorRef } from '../lib/editorRef'
 import { refreshProjectBrief } from '../lib/projectBrief'
 import {
@@ -393,9 +395,19 @@ export function EditorArea() {
       if (!model || model.uri.scheme !== 'file') return
       const path = model.uri.fsPath
       const snap = getSnapshot(path)
-      useEditorStore
-        .getState()
-        .markDirty(path, snap === undefined ? false : model.getValue() !== snap)
+      const dirty = snap === undefined ? false : model.getValue() !== snap
+      useEditorStore.getState().markDirty(path, dirty)
+      const settings = useSettingsStore.getState()
+      if (dirty && settings.autoSave === 'afterDelay') {
+        scheduleAutoSave(path, model, settings.autoSaveDelay)
+      }
+    })
+
+    editor.onDidBlurEditorText(() => {
+      if (useSettingsStore.getState().autoSave !== 'onFocusChange') return
+      const model = editor.getModel()
+      if (!model || model.uri.scheme !== 'file') return
+      autoSaveNow(model.uri.fsPath, model)
     })
 
     editor.onDidChangeCursorSelection((e: any) => {
@@ -405,10 +417,15 @@ export function EditorArea() {
       if (!model || !sel) return
       const path = model.uri.scheme === 'file' ? model.uri.fsPath : model.uri.path
       const selectedText: string = model.getValueInRange(sel)
+      const opts = model.getOptions()
       useAppStore.getState().setSelectionInfo({
         line: sel.positionLineNumber,
         column: sel.positionColumn,
         selected: selectedText.length,
+        language: model.getLanguageId(),
+        tabSize: opts.tabSize,
+        insertSpaces: opts.insertSpaces,
+        eol: model.getEOL() === '\r\n' ? 'CRLF' : 'LF',
       })
       if (selectedText.trim().length > 0) {
         const pos = editor.getScrolledVisiblePosition({
@@ -436,6 +453,7 @@ export function EditorArea() {
 
   return (
     <div className="editor-area">
+      <EditorBreadcrumbs />
       <div
         className="editor-groups"
         data-direction={splitDirection}

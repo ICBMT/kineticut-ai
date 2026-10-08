@@ -81,7 +81,16 @@ interface AppState {
   briefLoading: boolean
 
   problems: { errors: number; warnings: number }
-  selectionInfo: { line: number; column: number; selected: number } | null
+  selectionInfo: {
+    line: number
+    column: number
+    selected: number
+    /** Monaco language id of the active file. */
+    language?: string
+    tabSize?: number
+    insertSpaces?: boolean
+    eol?: 'LF' | 'CRLF'
+  } | null
   editorSelection: EditorSelectionInfo | null
   askAiAnchor: { x: number; y: number } | null
 
@@ -116,7 +125,7 @@ interface AppState {
   setBriefLoading(v: boolean): void
 
   setProblems(p: { errors: number; warnings: number }): void
-  setSelectionInfo(s: { line: number; column: number; selected: number } | null): void
+  setSelectionInfo(s: NonNullable<AppState['selectionInfo']> | null): void
   setEditorSelection(s: EditorSelectionInfo | null): void
   setAskAiAnchor(a: { x: number; y: number } | null): void
 

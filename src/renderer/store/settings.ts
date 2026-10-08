@@ -32,7 +32,12 @@ const PERSIST_KEYS = [
   'panelPosition',
   'splitDirection',
   'formatOnSave',
+  'autoSave',
+  'autoSaveDelay',
 ] as const
+
+/** off · save shortly after typing stops · save when the editor loses focus. */
+export type AutoSaveMode = 'off' | 'afterDelay' | 'onFocusChange'
 
 export type ProviderStatus = 'unknown' | 'ok' | 'error'
 
@@ -59,6 +64,9 @@ export interface SettingsState {
   panelPosition: PanelPosition
   splitDirection: SplitDirection
   formatOnSave: boolean
+  autoSave: AutoSaveMode
+  /** Milliseconds of inactivity before an 'afterDelay' autosave. */
+  autoSaveDelay: number
   providerStatus: Record<string, ProviderStatus>
 
   load(): Promise<void>
@@ -108,6 +116,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   panelPosition: 'bottom',
   splitDirection: 'horizontal',
   formatOnSave: false,
+  autoSave: 'off',
+  autoSaveDelay: 1000,
   providerStatus: {},
 
   load: async () => {
@@ -147,6 +157,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       panelPosition: bag.panelPosition === 'right' ? 'right' : 'bottom',
       splitDirection: bag.splitDirection === 'vertical' ? 'vertical' : 'horizontal',
       formatOnSave: bag.formatOnSave === true,
+      autoSave:
+        bag.autoSave === 'afterDelay' || bag.autoSave === 'onFocusChange' ? bag.autoSave : 'off',
+      autoSaveDelay: Math.min(10000, Math.max(300, Number(bag.autoSaveDelay) || 1000)),
     })
     applyAppearance(get())
     // Probe providers in the background to discover models.

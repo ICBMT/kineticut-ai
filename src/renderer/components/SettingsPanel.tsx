@@ -561,6 +561,31 @@ export function SettingsPanel() {
               label="Format on save"
             />
           </SettingRow>
+          <SettingRow title="Auto save" desc="Save files automatically while you work (no formatting)">
+            <Segmented
+              value={settings.autoSave}
+              options={[
+                { value: 'off', label: 'Off' },
+                { value: 'afterDelay', label: 'After delay' },
+                { value: 'onFocusChange', label: 'On focus change' },
+              ]}
+              onChange={(v) => settings.set('autoSave', v)}
+            />
+          </SettingRow>
+          {settings.autoSave === 'afterDelay' && (
+            <SettingRow title="Auto save delay" desc="How long to wait after you stop typing">
+              <Segmented
+                value={String(settings.autoSaveDelay)}
+                options={[
+                  { value: '500', label: '0.5s' },
+                  { value: '1000', label: '1s' },
+                  { value: '2000', label: '2s' },
+                  { value: '5000', label: '5s' },
+                ]}
+                onChange={(v) => settings.set('autoSaveDelay', Number(v))}
+              />
+            </SettingRow>
+          )}
         </div>
 
         <SectionTitle icon={PanelLeft} title="Layout" />

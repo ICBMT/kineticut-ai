@@ -3,6 +3,7 @@ import { basename } from '../lib/utils'
 import { useAppStore } from '../store/app'
 import { currentActivityLabel, useAIStore } from '../store/ai'
 import { resolveChatModel, useSettingsStore } from '../store/settings'
+import { languageLabel } from '../lib/languages'
 import { Spinner } from './ui'
 
 export function StatusBar() {
@@ -69,13 +70,36 @@ export function StatusBar() {
             {chat.model}
           </span>
         )}
+        {settings.autoSave !== 'off' && (
+          <span
+            className="sb-item"
+            title={
+              settings.autoSave === 'afterDelay'
+                ? `Auto Save: saves ${settings.autoSaveDelay / 1000}s after you stop typing`
+                : 'Auto Save: saves when the editor loses focus'
+            }
+          >
+            <span className="sb-dot" style={{ background: 'var(--green)' }} />
+            Auto Save
+          </span>
+        )}
         {sel && (
           <span className="sb-item">
             Ln {sel.line}, Col {sel.column}
             {sel.selected > 0 ? ` (${sel.selected} selected)` : ''}
           </span>
         )}
-        <span className="sb-item">Spaces: 2</span>
+        {sel && sel.tabSize !== undefined && (
+          <span className="sb-item" title="Indentation of the active file">
+            {sel.insertSpaces ? `Spaces: ${sel.tabSize}` : `Tab Size: ${sel.tabSize}`}
+          </span>
+        )}
+        {sel && sel.eol && <span className="sb-item" title="Line endings">{sel.eol}</span>}
+        {sel && sel.language && (
+          <span className="sb-item" title="Language mode of the active file">
+            {languageLabel(sel.language)}
+          </span>
+        )}
         <span className="sb-item">UTF-8</span>
       </div>
     </div>

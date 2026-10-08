@@ -82,9 +82,9 @@ function FileRow({ icon: Icon, label, files }: { icon: typeof BookOpen; label: s
       <Icon size={11} className="mt-[3px] shrink-0 text-[var(--text-faint)]" />
       <span className="shrink-0 pt-[1px] text-[10px] uppercase tracking-wide text-[var(--text-faint)]">{label}</span>
       <div className="flex min-w-0 flex-wrap gap-1">
-        {shown.map((f) => (
+        {shown.map((f, i) => (
           <span
-            key={f}
+            key={`${i}-${f}`}
             title={f}
             className="max-w-[160px] truncate rounded border border-[var(--border-soft)] bg-[var(--bg-hover)] px-1.5 py-[1px] font-mono text-[10px] text-[var(--text-dim)]"
           >

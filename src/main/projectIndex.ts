@@ -237,8 +237,10 @@ function startWatching(state: IndexState): void {
         const st = await fs.stat(p)
         if (!st.isFile()) return
         // Preserve any existing summary when the file content is unchanged.
-        const prev = state.byRel.get(rel)
         const file = await buildEntry(p, rel, st.size, st.mtimeMs)
+        // Read `prev` AFTER the await: two watcher events (add + change) for the
+        // same file can race here, and reading earlier pushed the file twice.
+        const prev = state.byRel.get(rel)
         if (prev?.summary && prev.summaryAt && prev.mtime === st.mtimeMs) {
           file.summary = prev.summary
           file.summaryAt = prev.summaryAt
@@ -312,6 +314,16 @@ async function getState(root: string): Promise<IndexState> {
 }
 
 /** Build a snapshot for the AI (fast path: everything cached). */
+/** One entry per relative path (guards against duplicates from older caches). */
+function uniqueByRel<T extends { rel: string }>(files: T[]): T[] {
+  const seen = new Set<string>()
+  return files.filter((f) => {
+    if (seen.has(f.rel)) return false
+    seen.add(f.rel)
+    return true
+  })
+}
+
 export async function projectIndexSnapshot(root: string): Promise<ProjectIndexSnapshot> {
   const state = await getState(root)
 
@@ -356,7 +368,7 @@ export async function projectIndexSnapshot(root: string): Promise<ProjectIndexSn
     purpose: derivePurpose(packageJson, readme),
     gitBranch,
     scannedAt: state.scannedAt || Date.now(),
-    entries: state.files,
+    entries: uniqueByRel(state.files),
   }
 }
 

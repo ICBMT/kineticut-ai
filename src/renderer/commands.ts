@@ -42,6 +42,7 @@ import {
   triggerInlineCompletion,
 } from './lib/aiActions'
 import { editorRef } from './lib/editorRef'
+import { persistTab } from './lib/saveFile'
 import { prescanProject } from './lib/projectKnowledge'
 import { refreshProjectBrief } from './lib/projectBrief'
 import { basename, joinPath, sleep } from './lib/utils'
@@ -88,8 +89,7 @@ export async function saveActiveTab(): Promise<void> {
       await formatEditor(editor)
     }
     const content = model.getValue()
-    await api.fs.write(tab.path, content)
-    store.markDirty(tab.path, false)
+    await persistTab(tab.path, content)
     useAppStore.getState().toast({
       kind: 'success',
       title: 'Saved',
@@ -116,12 +116,11 @@ export async function saveAllTabs(): Promise<void> {
     if (!store.dirty[tab.path]) continue
     try {
       if (model && activeTab && tab.path === activeTab.path) {
-        await api.fs.write(tab.path, model.getValue())
+        await persistTab(tab.path, model.getValue())
       } else {
         const res = await api.fs.read(tab.path)
-        await api.fs.write(tab.path, res.content)
+        await persistTab(tab.path, res.content)
       }
-      store.markDirty(tab.path, false)
       saved++
     } catch {
       /* skip */
@@ -237,6 +236,17 @@ export const COMMANDS: Command[] = [
   } },
 
   // Editor
+  { id: 'file.toggleAutoSave', title: 'Toggle Auto Save', category: 'File', icon: Save, keywords: 'autosave automatic save delay', run: () => {
+    const settings = useSettingsStore.getState()
+    const next = settings.autoSave === 'off' ? 'afterDelay' : 'off'
+    settings.set('autoSave', next)
+    useAppStore.getState().toast({
+      kind: 'info',
+      title: next === 'off' ? 'Auto Save off' : 'Auto Save on',
+      message: next === 'off' ? undefined : 'Files save shortly after you stop typing',
+      duration: 1800,
+    })
+  } },
   { id: 'editor.format', title: 'Format Document', category: 'Editor', icon: AlignLeft, shortcut: 'Ctrl+Shift+I', keywords: 'prettier format code', run: formatDocument },
   { id: 'editor.goToLine', title: 'Go to Line…', category: 'Editor', icon: ArrowDownToLine, shortcut: 'Ctrl+G', keywords: 'jump navigate line number', run: goToLine },
   { id: 'editor.split', title: 'Split Editor', category: 'Editor', icon: SquareSplitVertical, keywords: 'side by side multitask groups', run: () => {
