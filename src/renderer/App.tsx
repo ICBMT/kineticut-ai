@@ -12,6 +12,7 @@ import { ActivityBar } from './components/ActivityBar'
 import { CommandPalette } from './components/CommandPalette'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { ConfirmModal, DiffModal, PromptModal } from './components/modals'
+import { ShortcutsModal } from './components/ShortcutsModal'
 import { EditorArea } from './components/EditorArea'
 import { QuickOpen } from './components/QuickOpen'
 import { SideBar } from './components/SideBar'
@@ -135,6 +136,7 @@ export function App() {
         <DiffModal />
         <ConfirmModal />
         <PromptModal />
+        <ShortcutsModal />
       </div>
     </ErrorBoundary>
   )

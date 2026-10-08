@@ -5,6 +5,7 @@ import {
   BrainCircuit,
   FileImage,
   FolderOpen,
+  Keyboard,
   MessageSquareText,
   Settings,
   Sparkles,
@@ -28,6 +29,13 @@ import {
 import { useAppStore } from '../store/app'
 import { useSettingsStore } from '../store/settings'
 import { basename, relativePath } from '../lib/utils'
+import { hintFor } from '../lib/shortcuts'
+
+/** Parent directory of a path, shown muted beside a folder's name. */
+function parentOf(p: string): string {
+  const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'))
+  return i > 0 ? p.slice(0, i) : p
+}
 import {
   disposeModel,
   editorOptions,
@@ -45,19 +53,22 @@ function closeTabWithDispose(path: string) {
 
 /* -------------------------------- welcome ----------------------------------- */
 
-const WELCOME_SHORTCUTS: [string, string][] = [
-  ['Ctrl+P', 'Go to file'],
-  ['Ctrl+Shift+P', 'Command palette'],
-  ['Ctrl+`', 'Terminal'],
-  ['Ctrl+I', 'Ask AI about selection'],
-  ['Ctrl+S', 'Save'],
-  ['Tab', 'Accept AI completion'],
+/** Command ids shown as hints on the welcome screen (labels come from KEYBINDINGS). */
+const WELCOME_HINT_IDS = [
+  'view.quickOpen',
+  'view.palette',
+  'view.togglePanel',
+  'ai.explain',
+  'ai.focusChat',
+  'file.save',
+  'help.shortcuts',
 ]
 
 function Welcome() {
   const recentFolders = useAppStore((s) => s.recentFolders)
   const recentFiles = useAppStore((s) => s.recentFiles)
   const folder = useAppStore((s) => s.folder)
+  const hints = hintFor(WELCOME_HINT_IDS)
 
   return (
     <div className="welcome">
@@ -101,6 +112,10 @@ function Welcome() {
           <Settings size={14} />
           Settings
         </button>
+        <button className="btn" onClick={() => useAppStore.getState().setShortcutsOpen(true)}>
+          <Keyboard size={14} />
+          Keyboard Shortcuts
+        </button>
       </div>
       <div className="flex gap-10 mt-3 text-left flex-wrap justify-center">
         {recentFolders.length > 0 && (
@@ -110,11 +125,14 @@ function Welcome() {
               {recentFolders.slice(0, 6).map((p) => (
                 <button
                   key={p}
-                  className="text-xs text-[var(--text-dim)] hover:text-[var(--accent)] text-left truncate max-w-[260px]"
+                  className="flex items-baseline gap-2 text-xs text-left max-w-[300px] group"
                   title={p}
                   onClick={() => useAppStore.getState().setFolder(p)}
                 >
-                  {p}
+                  <span className="font-semibold text-[var(--text)] group-hover:text-[var(--accent)] shrink-0">
+                    {basename(p)}
+                  </span>
+                  <span className="truncate text-[var(--text-faint)]">{parentOf(p)}</span>
                 </button>
               ))}
             </div>
@@ -139,10 +157,10 @@ function Welcome() {
         )}
       </div>
       <div className="grid grid-cols-2 gap-x-10 gap-y-1.5 mt-2 text-[11px] text-[var(--text-faint)]">
-        {WELCOME_SHORTCUTS.map(([combo, label]) => (
-          <div key={combo} className="flex items-center gap-2">
-            <span className="kbd">{combo}</span>
-            <span>{label}</span>
+        {hints.map((h) => (
+          <div key={h.commandId} className="flex items-center gap-2">
+            <span className="kbd">{h.combo}</span>
+            <span>{h.label}</span>
           </div>
         ))}
       </div>

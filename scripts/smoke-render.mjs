@@ -394,6 +394,29 @@ async function main() {
   }
   checks.push(['git: show changes diffs HEAD vs working file (read-only, path-safe)', gitShowOk])
 
+  // Discoverability: shortcuts reference is derived from the live bindings.
+  let shortcutsOk = false
+  try {
+    const kb = await server.ssrLoadModule('/lib/shortcuts.ts')
+    const cmds = await server.ssrLoadModule('/commands.ts')
+    const rows = kb.shortcutRows()
+    const bound = cmds.KEYBINDINGS.some((b) => b.combo === 'mod+alt+/' && b.commandId === 'help.shortcuts')
+    useAppStore.getState().setShortcutsOpen(true)
+    const openNow = useAppStore.getState().shortcutsOpen
+    useAppStore.getState().setShortcutsOpen(false)
+    shortcutsOk =
+      kb.formatCombo('mod+alt+l') === 'Ctrl+Alt+L' &&
+      kb.formatCombo('mod+shift+p') === 'Ctrl+Shift+P' &&
+      rows.some((r) => r.commandId === 'ai.focusChat' && r.combo === 'Ctrl+Alt+L') &&
+      rows.length >= 10 &&
+      kb.hintFor(['view.quickOpen', 'file.save']).length === 2 &&
+      bound &&
+      openNow === true
+  } catch (err) {
+    console.log('  (shortcuts checks error:', String(err).slice(0, 200), ')')
+  }
+  checks.push(['keyboard shortcuts reference lists live bindings (Ctrl+Alt+/)', shortcutsOk])
+
   // Chat ergonomics: slash commands and @file mentions are pure helpers; regenerate
   // and edit-and-resend re-run the real turn pipeline on the same session.
   let chatActionsOk = false

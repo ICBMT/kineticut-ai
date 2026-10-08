@@ -99,6 +99,7 @@ interface AppState {
   confirmRequest: ConfirmRequest | null
   promptRequest: PromptRequest | null
   paletteOpen: boolean
+  shortcutsOpen: boolean
   quickOpenOpen: boolean
 
   setReady(v: boolean): void
@@ -140,6 +141,7 @@ interface AppState {
   clearPrompt(): void
 
   setPaletteOpen(v: boolean): void
+  setShortcutsOpen(v: boolean): void
   setQuickOpenOpen(v: boolean): void
 }
 
@@ -173,6 +175,7 @@ export const useAppStore = create<AppState>()(
       confirmRequest: null,
       promptRequest: null,
       paletteOpen: false,
+      shortcutsOpen: false,
       quickOpenOpen: false,
 
       setReady: (v) => set({ ready: v }),
@@ -264,6 +267,7 @@ export const useAppStore = create<AppState>()(
       clearPrompt: () => set({ promptRequest: null }),
 
       setPaletteOpen: (v) => set({ paletteOpen: v }),
+      setShortcutsOpen: (v) => set({ shortcutsOpen: v }),
       setQuickOpenOpen: (v) => set({ quickOpenOpen: v }),
     }),
     {

@@ -216,6 +216,7 @@ export const COMMANDS: Command[] = [
 
   // View
   { id: 'view.palette', title: 'Command Palette', category: 'View', icon: Keyboard, shortcut: 'Ctrl+Shift+P', keywords: 'commands', run: () => useAppStore.getState().setPaletteOpen(true) },
+  { id: 'help.shortcuts', title: 'Keyboard Shortcuts', category: 'Help', icon: Keyboard, shortcut: 'Ctrl+Alt+/', keywords: 'keys hotkeys keybindings reference cheat sheet', run: () => useAppStore.getState().setShortcutsOpen(true) },
   { id: 'view.quickOpen', title: 'Go to File…', category: 'View', icon: Search, shortcut: 'Ctrl+P', keywords: 'open file find', run: () => useAppStore.getState().setQuickOpenOpen(true) },
   { id: 'view.toggleSidebar', title: 'Toggle Sidebar', category: 'View', icon: PanelLeft, shortcut: 'Ctrl+B', keywords: 'explorer', run: () => useAppStore.getState().toggleSidebar() },
   { id: 'view.togglePanel', title: 'Toggle Panel', category: 'View', icon: PanelBottom, shortcut: 'Ctrl+`', keywords: 'terminal output', run: () => useAppStore.getState().togglePanel() },
@@ -352,6 +353,7 @@ export const KEYBINDINGS: { combo: string; commandId: string }[] = [
   { combo: 'mod+alt+l', commandId: 'ai.focusChat' },
   { combo: 'mod+shift+i', commandId: 'editor.format' },
   { combo: 'mod+g', commandId: 'editor.goToLine' },
+  { combo: 'mod+alt+/', commandId: 'help.shortcuts' },
 ]
 
 function eventCombo(e: KeyboardEvent): string | null {
