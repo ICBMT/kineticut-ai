@@ -17,6 +17,7 @@ import { basename, join, relative } from 'node:path'
 import chokidar from 'chokidar'
 import { simpleGit } from 'simple-git'
 import { extractFileMeta, isTextLike } from '../shared/fileMeta'
+import { derivePurpose } from '../shared/purpose'
 import type { ProjectIndexEntry, ProjectIndexSnapshot } from '../shared/types'
 
 const KEY_FILES = new Set([
@@ -352,6 +353,7 @@ export async function projectIndexSnapshot(root: string): Promise<ProjectIndexSn
     keyFiles: state.keyFiles,
     packageJson,
     readme: readme?.slice(0, 2000),
+    purpose: derivePurpose(packageJson, readme),
     gitBranch,
     scannedAt: state.scannedAt || Date.now(),
     entries: state.files,

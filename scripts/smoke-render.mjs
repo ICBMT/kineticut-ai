@@ -259,6 +259,8 @@ async function main() {
   let infraOk = false
   let mentionOk = false
   let contextBlockOk = false
+  let purposeOk = false
+  let metaQueryOk = false
   try {
     const knowledge = await server.ssrLoadModule('/lib/projectKnowledge.ts')
     await knowledge.prescanProject({ maxFiles: 8 })
@@ -309,6 +311,17 @@ async function main() {
     // The chat context block is built from the knowledge base.
     const block = await knowledge.retrieveRelevantFilesForQuery('how does the terminal work?')
     contextBlockOk = !!block && block.includes('Relevant files')
+
+    // The app purpose is derived in the optimized index (package.json/README, no AI).
+    purposeOk = typeof snap2.purpose === 'string' && snap2.purpose.length > 20
+    // "What is this app for?" gets the purpose + identity files from the index.
+    const metaBlock = await knowledge.retrieveRelevantFilesForQuery(
+      'what is this app for? what does it do?',
+    )
+    metaQueryOk =
+      !!metaBlock &&
+      metaBlock.includes('About the open project') &&
+      /README excerpt|package\.json/.test(metaBlock)
   } catch (err) {
     console.log('  (knowledge checks error:', String(err).slice(0, 160), ')')
   }
@@ -317,6 +330,29 @@ async function main() {
   checks.push(['infrastructure detected (TypeScript / Electron / npm)', infraOk])
   checks.push(['explicit file mention resolves for content injection', mentionOk])
   checks.push(['knowledge context block built for chat prompts', contextBlockOk])
+  checks.push(['project index derives the app purpose (optimized, no AI)', purposeOk])
+  checks.push(['"what is this app for" gets purpose + identity files from the index', metaQueryOk])
+
+  // Activity bar: clicking the active view's button toggles the sidebar closed
+  // (the first/files button fix); clicking again reopens it.
+  let toggleOk = false
+  try {
+    useAppStore.getState().setSidebarView('explorer')
+    const shown =
+      useAppStore.getState().sidebarVisible && useAppStore.getState().sidebarView === 'explorer'
+    useAppStore.getState().toggleSidebarView('explorer')
+    const hiddenAfterClick = !useAppStore.getState().sidebarVisible
+    useAppStore.getState().toggleSidebarView('explorer')
+    const reshown = useAppStore.getState().sidebarVisible
+    useAppStore.getState().toggleSidebarView('search')
+    const switched =
+      useAppStore.getState().sidebarVisible && useAppStore.getState().sidebarView === 'search'
+    toggleOk = shown && hiddenAfterClick && reshown && switched
+    useAppStore.getState().setSidebarView('explorer') // restore
+  } catch {
+    /* ignore */
+  }
+  checks.push(['activity bar: clicking the active files button toggles the sidebar', toggleOk])
 
   // Regression: the editor lib can create an EMPTY model before ensureModel
   // runs — ensureModel must fill it (this was the "files appear empty" bug).

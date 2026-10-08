@@ -144,6 +144,8 @@ export interface ProjectIndexSnapshot {
   keyFiles: Record<string, string>
   packageJson?: any
   readme?: string
+  /** One-line "what is this app for" — derived from package.json/README at snapshot time (cheap, no AI). */
+  purpose?: string
   gitBranch?: string | null
   scannedAt: number
   /** Every indexed file with metadata + summaries (the knowledge base). */

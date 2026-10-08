@@ -10,10 +10,13 @@ import { api } from '../api'
 import { streamChat } from '../ai/providers'
 import { useAppStore } from '../store/app'
 import { resolveChatModel, useSettingsStore } from '../store/settings'
+import { derivePurpose } from '../../shared/purpose'
 
 export interface ProjectContext {
   folder: string
   name: string
+  /** One-line "what is this app for" (from the optimized project index). */
+  purpose?: string
   packageJson?: any
   readme?: string
   topLevel: string[]
@@ -30,6 +33,7 @@ export async function gatherProjectContext(folder: string): Promise<ProjectConte
     return {
       folder: snap.folder,
       name: snap.name,
+      purpose: snap.purpose,
       packageJson: snap.packageJson,
       readme: snap.readme,
       topLevel: snap.topLevel,
@@ -119,6 +123,7 @@ async function gatherProjectContextFromFs(folder: string): Promise<ProjectContex
   return {
     folder,
     name: packageJson?.name || folder.split(/[/\\]/).pop() || folder,
+    purpose: derivePurpose(packageJson, readmeName ? keyFiles[readmeName] : undefined),
     packageJson,
     readme: readmeName ? keyFiles[readmeName]?.slice(0, 2000) : undefined,
     topLevel,
@@ -132,6 +137,7 @@ async function gatherProjectContextFromFs(folder: string): Promise<ProjectContex
 /** Heuristic brief used when no AI model is available. */
 export function buildStaticBrief(ctx: ProjectContext): string {
   const lines: string[] = [`**${ctx.name}**`]
+  if (ctx.purpose) lines.push(`- 🎯 Purpose: ${ctx.purpose}`)
   if (ctx.packageJson) {
     lines.push(`- 📦 Node project: \`${ctx.packageJson.name}\` ${ctx.packageJson.version || ''}`)
     if (ctx.packageJson.description) lines.push(`- ${ctx.packageJson.description}`)
@@ -168,6 +174,7 @@ Do NOT invent facts that are not supported by the context. Be concrete and brief
 <context>
 Project folder: ${ctx.folder}
 Name: ${ctx.name}
+${ctx.purpose ? `Purpose (from package.json/README): ${ctx.purpose}` : ''}
 ${ctx.packageJson ? `package.json:\n${JSON.stringify(ctx.packageJson, null, 2).slice(0, 3000)}` : ''}
 ${ctx.readme ? `README (excerpt):\n${ctx.readme.slice(0, 1500)}` : ''}
 ${

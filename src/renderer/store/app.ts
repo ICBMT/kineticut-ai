@@ -99,6 +99,8 @@ interface AppState {
   setSidebarVisible(v: boolean): void
   toggleSidebar(): void
   setSidebarView(v: SidebarView): void
+  /** Activity-bar click: show the view, or hide the sidebar when it is already active (VS Code toggle). */
+  toggleSidebarView(v: SidebarView): void
   setSidebarWidth(w: number): void
   setChatVisible(v: boolean): void
   toggleChat(): void
@@ -194,6 +196,18 @@ export const useAppStore = create<AppState>()(
           return
         }
         set({ sidebarView: v, sidebarVisible: true })
+      },
+      toggleSidebarView: (v) => {
+        if (v === 'chat') {
+          set((s) => ({ chatVisible: !s.chatVisible }))
+          return
+        }
+        // Clicking the activity-bar button of the ACTIVE view hides the
+        // sidebar (VS Code behavior); any other click shows + switches.
+        set((s) => ({
+          sidebarView: v,
+          sidebarVisible: s.sidebarVisible && s.sidebarView === v ? false : true,
+        }))
       },
       setSidebarWidth: (w) => set({ sidebarWidth: Math.min(600, Math.max(180, w)) }),
       setChatVisible: (v) => set({ chatVisible: v }),

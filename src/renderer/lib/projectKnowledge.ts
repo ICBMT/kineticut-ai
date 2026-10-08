@@ -376,6 +376,15 @@ export function retrieveRelevantFiles(
   return hits.sort((a, b) => b.score - a.score).slice(0, Math.max(k, mentioned ? k + 1 : k))
 }
 
+/** Does the question ask about the project/app itself rather than its code? */
+export function isProjectMetaQuery(query: string): boolean {
+  const q = query.toLowerCase()
+  if (!/\b(app|application|project|program|software|repo|codebase|editor|tool|product)\b/.test(q)) {
+    return false
+  }
+  return /\b(what|why|how|purpose|about|describe|tell|explain)\b/.test(q)
+}
+
 /**
  * Build the knowledge context block for a chat/agent prompt: the most
  * relevant files (with summaries), plus the full content of any file the
@@ -391,7 +400,20 @@ export async function retrieveRelevantFilesForQuery(query: string, k = 5): Promi
     return null
   }
   const entries = snap.entries || []
-  if (entries.length === 0) return null
+
+  // Always-on optimized context: what the app IS and what it is FOR, straight
+  // from the index snapshot (package.json description / README lead) — no
+  // file reads, no AI calls. Injected into every chat + agent prompt.
+  const header: string[] = []
+  if (snap.purpose) {
+    const infra = detectInfra(snap)
+    const stack = infra.stack.length ? ` Stack: ${infra.stack.join(', ')}.` : ''
+    header.push(`About the open project "${snap.name}": ${snap.purpose}${stack}`)
+  }
+
+  if (entries.length === 0) {
+    return header.length > 0 ? header.join('\n') : null
+  }
 
   const hits = retrieveRelevantFiles(entries, query, k)
   const lines = hits.map((h) => {
@@ -400,7 +422,8 @@ export async function retrieveRelevantFilesForQuery(query: string, k = 5): Promi
     return `- ${h.entry.rel} (${h.entry.language})${summary}${syms}`
   })
 
-  let block = `Relevant files from the project knowledge base (${entries.length} files indexed in ${folder}):\n${lines.join('\n')}`
+  let block = header.length > 0 ? header.join('\n') + '\n\n' : ''
+  block += `Relevant files from the project knowledge base (${entries.length} files indexed in ${folder}):\n${lines.join('\n')}`
 
   // Explicit file mention → include its content so the AI can answer precisely.
   const mentioned = findMentionedFile(query, entries)
@@ -413,6 +436,18 @@ export async function retrieveRelevantFilesForQuery(query: string, k = 5): Promi
     } catch {
       /* ignore */
     }
+  }
+
+  // "What is this app for?" → answer from the cached identity files (README +
+  // package.json excerpts already in the snapshot) — still no files re-read.
+  if (isProjectMetaQuery(query)) {
+    const excerpts: string[] = []
+    if (snap.readme?.trim()) {
+      excerpts.push(`README excerpt (project identity):\n${snap.readme.trim().slice(0, 1500)}`)
+    }
+    const pj = snap.keyFiles['package.json']
+    if (pj) excerpts.push(`package.json (identity + scripts):\n${pj.slice(0, 1500)}`)
+    if (excerpts.length > 0) block += `\n\n${excerpts.join('\n\n')}`
   }
   return block
 }

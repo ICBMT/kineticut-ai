@@ -12,6 +12,7 @@ import { basename, join, relative } from 'node:path'
 import chokidar from 'chokidar'
 import { simpleGit } from 'simple-git'
 import { extractFileMeta, isTextLike } from './file-meta.mjs'
+import { derivePurpose } from './purpose.mjs'
 
 const KEY_FILES = new Set([
   'package.json',
@@ -294,6 +295,7 @@ export async function projectIndexSnapshot(root) {
     keyFiles: state.keyFiles,
     packageJson,
     readme: readme?.slice(0, 2000),
+    purpose: derivePurpose(packageJson, readme),
     gitBranch,
     scannedAt: state.scannedAt || Date.now(),
     entries: state.files,

@@ -26,7 +26,7 @@ export function ActivityBar() {
           key={it.view}
           className={cn('activity-item', visible && view === it.view && 'active')}
           title={it.label}
-          onClick={() => useAppStore.getState().setSidebarView(it.view)}
+          onClick={() => useAppStore.getState().toggleSidebarView(it.view)}
         >
           <it.icon size={20} />
           {it.view === 'git' && changedCount > 0 && (
@@ -46,7 +46,7 @@ export function ActivityBar() {
       <button
         className={cn('activity-item', visible && view === 'settings' && 'active')}
         title="Settings"
-        onClick={() => useAppStore.getState().setSidebarView('settings')}
+        onClick={() => useAppStore.getState().toggleSidebarView('settings')}
       >
         <Settings size={20} />
       </button>
