@@ -17,7 +17,7 @@ import { homedir } from 'node:os'
 import { join, relative } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import http from 'node:http'
-import { projectIndexSnapshot, rescanProjectIndex, setFileSummaries } from './project-index.mjs'
+import { projectFile, projectIndexSnapshot, rescanProjectIndex, setFileSummaries } from './project-index.mjs'
 
 const require = createRequire(import.meta.url)
 const { WebSocketServer } = require('ws')
@@ -705,6 +705,15 @@ const server = http.createServer(async (req, res) => {
     if (path === '/api/project-index' && method === 'GET') {
       const root = url.searchParams.get('root') || ROOT
       return sendJson(res, 200, await projectIndexSnapshot(root))
+    }
+
+    if (path === '/api/project-index/file' && method === 'GET') {
+      const root = url.searchParams.get('root') || ROOT
+      try {
+        return sendJson(res, 200, await projectFile(root, url.searchParams.get('rel') || ''))
+      } catch (err) {
+        return sendJson(res, 404, { error: err instanceof Error ? err.message : String(err) })
+      }
     }
 
     if (path === '/api/project-index/rescan' && method === 'POST') {

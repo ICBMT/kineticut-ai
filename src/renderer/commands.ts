@@ -14,6 +14,7 @@ import {
   FilePlus,
   FolderOpen,
   GitBranch,
+  History,
   Keyboard,
   MessageSquarePlus,
   Moon,
@@ -44,7 +45,7 @@ import {
 } from './lib/aiActions'
 import { editorRef } from './lib/editorRef'
 import { persistTab } from './lib/saveFile'
-import { prescanProject } from './lib/projectKnowledge'
+import { buildUnderstanding } from './lib/projectKnowledge'
 import { refreshProjectBrief } from './lib/projectBrief'
 import { basename, joinPath, relativePath, sleep } from './lib/utils'
 import { showGitChanges } from './lib/gitChanges'
@@ -217,6 +218,7 @@ export const COMMANDS: Command[] = [
   // View
   { id: 'view.palette', title: 'Command Palette', category: 'View', icon: Keyboard, shortcut: 'Ctrl+Shift+P', keywords: 'commands', run: () => useAppStore.getState().setPaletteOpen(true) },
   { id: 'help.shortcuts', title: 'Keyboard Shortcuts', category: 'Help', icon: Keyboard, shortcut: 'Ctrl+Alt+/', keywords: 'keys hotkeys keybindings reference cheat sheet', run: () => useAppStore.getState().setShortcutsOpen(true) },
+  { id: 'view.history', title: 'Projects & Chat History', category: 'View', icon: History, shortcut: 'Ctrl+Alt+H', keywords: 'history projects chats old previous resume recent sessions', run: () => useAppStore.getState().setHistoryOpen(true) },
   { id: 'view.quickOpen', title: 'Go to File…', category: 'View', icon: Search, shortcut: 'Ctrl+P', keywords: 'open file find', run: () => useAppStore.getState().setQuickOpenOpen(true) },
   { id: 'view.toggleSidebar', title: 'Toggle Sidebar', category: 'View', icon: PanelLeft, shortcut: 'Ctrl+B', keywords: 'explorer', run: () => useAppStore.getState().toggleSidebar() },
   { id: 'view.togglePanel', title: 'Toggle Panel', category: 'View', icon: PanelBottom, shortcut: 'Ctrl+`', keywords: 'terminal output', run: () => useAppStore.getState().togglePanel() },
@@ -279,9 +281,9 @@ export const COMMANDS: Command[] = [
     useAppStore.getState().setChatVisible(true)
     void refreshProjectBrief()
   } },
-  { id: 'ai.prescan', title: 'Prescan Project (build AI knowledge)', category: 'AI', icon: Database, keywords: 'index files summaries knowledge base understand every file', run: () => {
+  { id: 'ai.understand', title: 'Build Project Understanding', category: 'AI', icon: Database, keywords: 'understand index files summaries knowledge base memory every file', run: () => {
     useAppStore.getState().setChatVisible(true)
-    void prescanProject()
+    void buildUnderstanding()
   } },
   { id: 'ai.toggleAgent', title: 'Toggle Agent Mode', category: 'AI', icon: Bot, shortcut: 'Ctrl+Shift+A', keywords: 'tools autonomous', run: () => {
     const ai = useAIStore.getState()
@@ -354,6 +356,7 @@ export const KEYBINDINGS: { combo: string; commandId: string }[] = [
   { combo: 'mod+shift+i', commandId: 'editor.format' },
   { combo: 'mod+g', commandId: 'editor.goToLine' },
   { combo: 'mod+alt+/', commandId: 'help.shortcuts' },
+  { combo: 'mod+alt+h', commandId: 'view.history' },
 ]
 
 function eventCombo(e: KeyboardEvent): string | null {

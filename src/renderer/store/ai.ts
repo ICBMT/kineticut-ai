@@ -16,6 +16,7 @@ import {
 } from '../lib/activity'
 import { currentBriefText } from '../lib/projectBrief'
 import { retrieveContextForQuery } from '../lib/projectKnowledge'
+import { useAppStore } from './app'
 import { resolveChatModel, useSettingsStore } from './settings'
 
 export interface ToolEventEntry {
@@ -45,6 +46,36 @@ export interface ChatSession {
   mode: 'chat' | 'agent'
   messages: ChatMessage[]
   createdAt: number
+  /** The project the chat belongs to (null for chats from before projects were tracked). */
+  folder?: string | null
+}
+
+/** How many chats the history keeps, and the storage budget for them (characters). */
+const MAX_SESSIONS = 200
+const STORE_BUDGET_CHARS = 3_500_000
+const MAX_MESSAGES_PER_SESSION = 80
+
+/** Keep the history small enough for storage: shorter tool results and reasoning. */
+function slimMessage(m: ChatMessage): ChatMessage {
+  return {
+    ...m,
+    reasoning: m.reasoning ? m.reasoning.slice(0, 2000) : undefined,
+    toolEvents: m.toolEvents?.map((e) => ({ call: e.call, status: e.status })),
+  }
+}
+
+/** Newest-first sessions that fit the storage budget. */
+export function trimForStorage(sessions: ChatSession[]): ChatSession[] {
+  const out: ChatSession[] = []
+  let size = 0
+  for (const s of sessions.slice(0, MAX_SESSIONS)) {
+    const slim = { ...s, messages: s.messages.slice(-MAX_MESSAGES_PER_SESSION).map(slimMessage) }
+    const cost = JSON.stringify(slim).length
+    if (size + cost > STORE_BUDGET_CHARS) break
+    size += cost
+    out.push(slim)
+  }
+  return out
 }
 
 interface AIState {
@@ -140,8 +171,9 @@ export const useAIStore = create<AIState>()(
           mode,
           messages: [],
           createdAt: Date.now(),
+          folder: useAppStore.getState().folder,
         }
-        set((s) => ({ sessions: [session, ...s.sessions].slice(0, 30), activeId: session.id }))
+        set((s) => ({ sessions: [session, ...s.sessions].slice(0, MAX_SESSIONS), activeId: session.id }))
         return session.id
       },
 
@@ -459,11 +491,13 @@ export const useAIStore = create<AIState>()(
     {
       name: 'kineticut.ai.v1',
       partialize: (s) => ({
-        sessions: s.sessions.slice(0, 20).map((x) => ({
-          ...x,
-          messages: x.messages.slice(-40),
-        })),
-        activeId: s.activeId,
+        sessions: trimForStorage(s.sessions),
+      }),
+      // A launch starts with no active chat; the history is still there to resume.
+      merge: (persisted, current) => ({
+        ...current,
+        ...(persisted as object),
+        activeId: null,
       }),
     },
   ),

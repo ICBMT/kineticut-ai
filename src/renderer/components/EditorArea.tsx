@@ -5,6 +5,7 @@ import {
   BrainCircuit,
   FileImage,
   FolderOpen,
+  History,
   Keyboard,
   MessageSquareText,
   Settings,
@@ -94,12 +95,18 @@ function Welcome() {
           <FolderOpen size={14} />
           Open Folder
         </button>
+        <button className="btn" onClick={() => useAppStore.getState().setHistoryOpen(true)}>
+          <History size={14} />
+          Projects &amp; Chats
+        </button>
         <button className="btn" onClick={() => useAppStore.getState().setChatVisible(true)}>
           <MessageSquareText size={14} />
           Chat with AI
         </button>
         <button
           className="btn"
+          disabled={!folder}
+          title={folder ? 'Brief the AI on this project' : 'Open a folder first'}
           onClick={() => {
             useAppStore.getState().setChatVisible(true)
             void refreshProjectBrief()
@@ -123,17 +130,26 @@ function Welcome() {
             <div className="field-label">Recent folders</div>
             <div className="flex flex-col gap-0.5">
               {recentFolders.slice(0, 6).map((p) => (
-                <button
-                  key={p}
-                  className="flex items-baseline gap-2 text-xs text-left max-w-[300px] group"
-                  title={p}
-                  onClick={() => useAppStore.getState().setFolder(p)}
-                >
-                  <span className="font-semibold text-[var(--text)] group-hover:text-[var(--accent)] shrink-0">
-                    {basename(p)}
-                  </span>
-                  <span className="truncate text-[var(--text-faint)]">{parentOf(p)}</span>
-                </button>
+                <div key={p} className="flex items-center gap-1 text-xs max-w-[300px] group">
+                  <button
+                    className="flex items-baseline gap-2 text-left min-w-0"
+                    title={p}
+                    onClick={() => useAppStore.getState().setFolder(p)}
+                  >
+                    <span className="font-semibold text-[var(--text)] group-hover:text-[var(--accent)] shrink-0">
+                      {basename(p)}
+                    </span>
+                    <span className="truncate text-[var(--text-faint)]">{parentOf(p)}</span>
+                  </button>
+                  <button
+                    className="icon-btn opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0"
+                    title="Remove from recent"
+                    aria-label={`Remove ${basename(p)} from recent folders`}
+                    onClick={() => useAppStore.getState().removeRecentFolder(p)}
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
               ))}
             </div>
           </div>

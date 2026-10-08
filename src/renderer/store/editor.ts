@@ -226,10 +226,9 @@ export const useEditorStore = create<EditorState>()(
     }),
     {
       name: 'kineticut.editor.v2',
-      partialize: (s) => ({
-        groups: s.groups,
-        activeGroupId: s.activeGroupId,
-      }),
+      // Open tabs are not restored: the editor starts empty on every launch.
+      partialize: () => ({}),
+      merge: (_persisted, current) => ({ ...current }),
       // Migrate any v1 persisted state (flat tabs) into a single group.
       migrate: (persisted: any) => {
         if (persisted && Array.isArray(persisted.tabs) && !Array.isArray(persisted.groups)) {

@@ -22,6 +22,7 @@ import { JSDOM, VirtualConsole } from 'jsdom'
 
 const API = 'http://127.0.0.1:4890'
 const TEST_FILE = '/home/user/kineticut-ai/package.json'
+const REPO = '/home/user/kineticut-ai'
 
 /* ------------------------------ jsdom globals ------------------------------ */
 
@@ -187,10 +188,19 @@ async function main() {
   const { useAppStore } = appStoreMod
   const { useEditorStore } = editorStoreMod
 
-  // Wait for boot (settings + system + folder restore).
+  // Wait for boot (settings + system).
   for (let i = 0; i < 40 && !useAppStore.getState().ready; i++) await sleep(250)
   // Let React settle and the initial render land.
   await sleep(1500)
+
+  // Every launch starts empty: no folder and no file is opened automatically.
+  const launchedEmpty =
+    !useAppStore.getState().folder && useEditorStore.getState().groups.every((g) => g.tabs.length === 0)
+  const welcomeOk = launchedEmpty && /Open Folder/.test(dom.window.document.body.textContent || '')
+
+  // The project is opened explicitly, the way a user opens it.
+  useAppStore.getState().setFolder(REPO)
+  await sleep(1200)
 
   // Project scanning is ON DEMAND — trigger it explicitly and wait for the brief.
   const briefMod = await server.ssrLoadModule('/lib/projectBrief.ts')
@@ -213,7 +223,7 @@ async function main() {
     ['app module loaded without errors', !loadError],
     ['title bar renders (Kineticut AI)', /Kineticut\s*AI/.test(text)],
     ['activity bar renders (5 items)', doc.querySelectorAll('.activity-item').length >= 5],
-    ['welcome screen renders (Open Folder)', /Open Folder/.test(text)],
+    ['launches empty: welcome screen, no folder or file opened', welcomeOk],
     ['explorer file tree renders (fs.list via API)', doc.querySelectorAll('.tree-row').length > 5],
     ['status bar shows a model from mock Ollama', /kinetic-coder:7b/.test(text)],
     ['settings loaded (theme applied)', doc.documentElement.dataset.theme === 'dark'],
@@ -246,7 +256,7 @@ async function main() {
       snap.fileCount > 50 &&
       Array.isArray(snap.topLevel) &&
       snap.topLevel.includes('src') &&
-      !!snap.keyFiles['package.json'] &&
+      snap.entries.some((e) => e.rel === 'package.json') &&
       snap.name === 'kineticut-ai'
   } catch {
     /* ignore */
@@ -538,9 +548,10 @@ async function main() {
   let contextBlockOk = false
   let purposeOk = false
   let metaQueryOk = false
+  let recallOk = false
   try {
     const knowledge = await server.ssrLoadModule('/lib/projectKnowledge.ts')
-    await knowledge.prescanProject({ maxFiles: 8 })
+    await knowledge.buildUnderstanding({ maxFiles: 8 })
     for (let i = 0; i < 80; i++) {
       const ks = knowledge.useKnowledgeStore.getState()
       if (!ks.scanning && ks.total > 0 && ks.done >= ks.total) break
@@ -571,12 +582,20 @@ async function main() {
       )
     }
 
-    // Infrastructure detection: stack + package manager.
-    const infra = knowledge.detectInfra(snap2)
-    infraOk =
-      infra.stack.includes('TypeScript') &&
-      infra.stack.includes('Electron') &&
-      infra.packageManager === 'npm'
+    // Code profile (read from the code, not from scripts): languages and frameworks.
+    const profile = knowledge.codeProfileLine(snap2)
+    infraOk = /TypeScript/.test(profile) && /Electron/.test(profile)
+
+    // Every file is retrievable from project memory, by path or by name.
+    const recPath = await knowledge.recallFile(REPO, 'src/renderer/App.tsx')
+    const recName = await knowledge.recallFile(REPO, 'ipc.ts')
+    const recMiss = await knowledge.recallFile(REPO, 'src/does/not/exist.ts')
+    recallOk =
+      recPath.ok &&
+      recPath.file.content.includes('export function App') &&
+      recName.ok &&
+      /ipc\.ts$/.test(recName.file.rel) &&
+      !recMiss.ok
 
     // Explicit file mention resolves to that file.
     const mention = knowledge.findMentionedFile(
@@ -604,11 +623,45 @@ async function main() {
   }
   checks.push(['prescan gives the AI a summary of every file', prescanOk])
   checks.push(['retrieval surfaces the right files for a question', retrievalOk])
-  checks.push(['infrastructure detected (TypeScript / Electron / npm)', infraOk])
+  checks.push(['code profile detected (TypeScript / Electron)', infraOk])
+  checks.push(['every file retrievable from memory (by path or name, misses reported)', recallOk])
   checks.push(['explicit file mention resolves for content injection', mentionOk])
   checks.push(['knowledge context block built for chat prompts', contextBlockOk])
   checks.push(['project index derives the app purpose (optimized, no AI)', purposeOk])
   checks.push(['"what is this app for" gets purpose + identity files from the index', metaQueryOk])
+
+  // Chat history: chats are tagged with their project and kept within the
+  // storage budget; the History panel lists projects and chats.
+  let historyOk = false
+  let historyUiOk = false
+  try {
+    const aiHist = await server.ssrLoadModule('/store/ai.ts')
+    const fake = Array.from({ length: 250 }, (_, i) => ({
+      id: 's' + i,
+      title: 't' + i,
+      mode: 'chat',
+      messages: [{ id: 'm', role: 'user', content: 'x'.repeat(2000), createdAt: i }],
+      createdAt: i,
+      folder: REPO,
+    }))
+    const kept = aiHist.trimForStorage(fake)
+    aiHist.useAIStore.getState().newSession('chat')
+    historyOk =
+      kept.length === 200 &&
+      JSON.stringify(kept).length <= 3_600_000 &&
+      kept[0].folder === REPO &&
+      aiHist.useAIStore.getState().activeSession()?.folder === REPO
+    aiHist.useAIStore.setState({ sessions: aiHist.useAIStore.getState().sessions.slice(1) })
+
+    useAppStore.getState().setHistoryOpen(true)
+    await sleep(400)
+    historyUiOk = /Chats \(\d+\)/.test(doc.body.textContent || '') && /Projects \(\d+\)/.test(doc.body.textContent || '')
+    useAppStore.getState().setHistoryOpen(false)
+  } catch (err) {
+    console.log('  (history checks error:', String(err).slice(0, 160), ')')
+  }
+  checks.push(['history: chats tagged by project, capped to the storage budget', historyOk])
+  checks.push(['history panel lists chats and projects', historyUiOk])
 
   // Activity bar: clicking the active view's button toggles the sidebar closed
   // (the first/files button fix); clicking again reopens it.

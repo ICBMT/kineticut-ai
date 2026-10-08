@@ -13,6 +13,7 @@ import { CommandPalette } from './components/CommandPalette'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { ConfirmModal, DiffModal, PromptModal } from './components/modals'
 import { ShortcutsModal } from './components/ShortcutsModal'
+import { HistoryModal } from './components/HistoryModal'
 import { EditorArea } from './components/EditorArea'
 import { QuickOpen } from './components/QuickOpen'
 import { SideBar } from './components/SideBar'
@@ -31,19 +32,9 @@ async function boot() {
   } catch {
     /* ignore */
   }
-  // Restore the last workspace (or fall back to the home/cwd).
-  const persistedFolder = useAppStore.getState().folder
-  const initial = persistedFolder || useAppStore.getState().system?.cwd || null
-  if (initial) {
-    try {
-      const st = await api.fs.stat(initial)
-      if (st.exists && st.type === 'directory') {
-        useAppStore.getState().setFolder(initial)
-      }
-    } catch {
-      /* ignore */
-    }
-  }
+  // Every launch starts empty: no folder and no file are opened automatically.
+  // Recent projects and past chats are available from the welcome screen and
+  // the History panel.
   useAppStore.getState().setReady(true)
 }
 
@@ -137,6 +128,7 @@ export function App() {
         <ConfirmModal />
         <PromptModal />
         <ShortcutsModal />
+        <HistoryModal />
       </div>
     </ErrorBoundary>
   )

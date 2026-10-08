@@ -4,7 +4,7 @@
  * feeding results back until it produces a final answer.
  */
 import { api } from '../api'
-import { detectInfra } from '../lib/projectKnowledge'
+import { codeProfileLine, dirLine, recallFile } from '../lib/projectKnowledge'
 import { languageForPath } from '../lib/languages'
 import { joinPath, truncate } from '../lib/utils'
 import { useAppStore } from '../store/app'
@@ -81,12 +81,24 @@ export const AGENT_TOOLS: AIToolDef[] = [
   {
     name: 'project_map',
     description:
-      'Get the project map: stack and infrastructure, structure, and a one-line AI summary of every indexed file. Use it to navigate the project before reading files.',
+      'Get the project map from project memory: what the project is for, its languages, frameworks and entry points, a digest of each directory, and a one-line summary of each file. Use it to navigate before reading files.',
     parameters: {
       type: 'object',
       properties: {
-        maxFiles: { type: 'number', description: 'Maximum files to include (default 120).' },
+        maxFiles: { type: 'number', description: 'Maximum files to list (default 150).' },
       },
+    },
+  },
+  {
+    name: 'recall_file',
+    description:
+      'Recall any file from project memory at any moment: returns its full content straight from memory (no disk round trip) with its summary. Accepts a workspace-relative path or just a file name.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Workspace-relative path (e.g. src/main/ipc.ts) or a file name.' },
+      },
+      required: ['path'],
     },
   },
   {
@@ -107,8 +119,8 @@ You help with any software task: exploring codebases, writing features, fixing b
 
 Rules:
 - The workspace root is the user's opened folder. Prefer workspace-relative paths in tool calls.
-- Call project_map FIRST to navigate — it lists every file with a one-line AI summary.
-- Inspect code with read_file / list_dir / search_code before editing. Never guess file contents.
+- Call project_map FIRST to navigate — it gives the project's purpose, the directory map and a summary of every file.
+- Use recall_file to read any project file from memory (fast). Use read_file for a file that is not in memory yet. Never guess file contents.
 - Prefer small, surgical changes. Preserve existing style and formatting.
 - write_file replaces the ENTIRE file — always include the complete new content, not a fragment.
 - run_command is for non-interactive commands only (builds, tests, scripts). Never run destructive commands without asking the user first in your reply.
@@ -274,27 +286,44 @@ async function executeToolCall(call: AIToolCall): Promise<{ result: string; erro
         const folder = app.folder
         if (!folder) return { result: 'Error: no workspace folder.', error: true }
         const snap = await api.projectIndex.get(folder)
-        const infra = detectInfra(snap)
-        const all = snap.entries || []
-        const max = Math.min(Number(args.maxFiles) || 120, 300)
+        const all = [...(snap.entries || [])].sort(
+          (a, b) => a.rel.split('/').length - b.rel.split('/').length || a.rel.localeCompare(b.rel),
+        )
+        const max = Math.min(Number(args.maxFiles) || 150, 400)
         const summarized = all.filter((e) => e.summary).length
+        const dirs = (snap.dirs || []).filter((d) => d.depth <= 2).slice(0, 30).map(dirLine)
         const files = all
           .slice(0, max)
           .map((e) => `- ${e.rel} (${e.language})${e.summary ? `: ${e.summary}` : ''}`)
         const lines = [
           `Project: ${snap.name} (${snap.fileCount} files)`,
-          `Stack: ${infra.stack.join(', ') || 'unknown'}`,
-          `Package manager: ${infra.packageManager || 'unknown'}`,
-          infra.devCommand ? `Dev: ${infra.devCommand}` : '',
-          infra.buildCommand ? `Build: ${infra.buildCommand}` : '',
-          infra.testCommand ? `Test: ${infra.testCommand}` : '',
-          infra.hasDocker ? 'Docker: yes' : '',
-          infra.hasCI ? `CI: ${infra.ciProvider}` : '',
-          `Files with AI summaries: ${summarized}/${all.length}`,
+          snap.purpose ? `Purpose: ${snap.purpose}` : '',
+          codeProfileLine(snap),
+          `Understood: ${summarized}/${all.length} files have summaries`,
           '',
-          files.join('\n'),
-        ].filter(Boolean)
+          'Directories:',
+          ...dirs,
+          '',
+          'Files:',
+          ...files,
+        ].filter((l) => l !== '')
         return { result: truncate(lines.join('\n'), 20000) }
+      }
+      case 'recall_file': {
+        const folder = app.folder
+        if (!folder) return { result: 'Error: no workspace folder.', error: true }
+        const res = await recallFile(folder, String(args.path || args.name || ''))
+        if (!res.ok) return { result: `Error: ${res.message}`, error: true }
+        const f = res.file
+        if (f.binary) {
+          return { result: `${f.rel} is a binary file (${f.size} bytes); its content cannot be shown.` }
+        }
+        const header = [
+          `File: ${f.rel} (${f.language}, ${f.size} bytes, from ${f.source === 'memory' ? 'project memory' : 'disk'})`,
+          f.summary ? `Summary: ${f.summary}` : '',
+          f.truncated ? '[content truncated]' : '',
+        ].filter(Boolean)
+        return { result: `${header.join('\n')}\n\n${f.content}` }
       }
       case 'open_file': {
         const target = resolvePath(args.path)

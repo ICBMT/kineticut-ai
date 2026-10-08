@@ -6,7 +6,7 @@ import { homedir } from 'node:os'
 import { extname, join, relative } from 'node:path'
 import chokidar from 'chokidar'
 import { simpleGit } from 'simple-git'
-import { projectIndexSnapshot, rescanProjectIndex, setFileSummaries } from './projectIndex'
+import { projectFile, projectIndexSnapshot, rescanProjectIndex, setFileSummaries } from './projectIndex'
 import type {
   ExecResult,
   FileEntry,
@@ -866,6 +866,9 @@ export function registerIpc(getWin: () => BrowserWindow | null) {
 
   ipcMain.handle('project-index:get', async (_e, root: string) => projectIndexSnapshot(root))
   ipcMain.handle('project-index:rescan', async (_e, root: string) => rescanProjectIndex(root))
+  ipcMain.handle('project-index:file', async (_e, payload: { root: string; rel: string }) =>
+    projectFile(payload.root, payload.rel),
+  )
   ipcMain.handle(
     'project-index:summaries',
     async (

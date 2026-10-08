@@ -61,6 +61,8 @@ interface AppState {
   system: SystemInfo | null
   folder: string | null
   recentFolders: string[]
+  /** Projects & chat history panel. */
+  historyOpen: boolean
   recentFiles: string[]
   fileIndex: FileTree | null
   /** Project sidebar (explorer/search/git/settings) visibility. */
@@ -143,6 +145,8 @@ interface AppState {
   setPaletteOpen(v: boolean): void
   setShortcutsOpen(v: boolean): void
   setQuickOpenOpen(v: boolean): void
+  setHistoryOpen(v: boolean): void
+  removeRecentFolder(path: string): void
 }
 
 export const useAppStore = create<AppState>()(
@@ -177,6 +181,7 @@ export const useAppStore = create<AppState>()(
       paletteOpen: false,
       shortcutsOpen: false,
       quickOpenOpen: false,
+      historyOpen: false,
 
       setReady: (v) => set({ ready: v }),
       setSystem: (s) => set({ system: s }),
@@ -269,11 +274,14 @@ export const useAppStore = create<AppState>()(
       setPaletteOpen: (v) => set({ paletteOpen: v }),
       setShortcutsOpen: (v) => set({ shortcutsOpen: v }),
       setQuickOpenOpen: (v) => set({ quickOpenOpen: v }),
+      setHistoryOpen: (v) => set({ historyOpen: v }),
+      removeRecentFolder: (path) => set((s) => ({ recentFolders: s.recentFolders.filter((p) => p !== path) })),
     }),
     {
       name: 'kineticut.app.v3',
+      // Every launch starts empty: no folder is reopened. Recent projects stay
+      // available from the welcome screen and the History panel.
       partialize: (s) => ({
-        folder: s.folder,
         recentFolders: s.recentFolders,
         recentFiles: s.recentFiles,
         sidebarView: s.sidebarView,
@@ -286,6 +294,14 @@ export const useAppStore = create<AppState>()(
         panelWidth: s.panelWidth,
       }),
       version: 3,
+      merge: (persisted, current) => ({
+        ...current,
+        ...(persisted as object),
+        folder: null,
+        fileIndex: null,
+        gitStatus: null,
+        projectBrief: null,
+      }),
       migrate: (persisted: any) => {
         // v2 stored the chat as a sidebar view; it now has its own slot.
         if (persisted && persisted.sidebarView === 'chat') {

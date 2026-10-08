@@ -145,7 +145,7 @@ export interface ProjectIndexEntry {
   summaryAt?: number
 }
 
-/** Snapshot of the main-process project index (see src/main/projectIndex.ts). */
+/** Snapshot of the project memory (see src/shared/projectMemory.mjs). */
 export interface ProjectIndexSnapshot {
   folder: string
   name: string
@@ -153,16 +153,58 @@ export interface ProjectIndexSnapshot {
   topLevel: string[]
   /** Shallowest-first list of workspace-relative file paths (capped). */
   treePaths: string[]
-  /** Cached excerpts of key files (package.json, README, tsconfig…). */
-  keyFiles: Record<string, string>
-  packageJson?: any
-  readme?: string
-  /** One-line "what is this app for" — derived from package.json/README at snapshot time (cheap, no AI). */
+  /** "What is this app for" — from the manifest description or README lead. */
   purpose?: string
+  readme?: string
   gitBranch?: string | null
   scannedAt: number
-  /** Every indexed file with metadata + summaries (the knowledge base). */
+  /** Every indexed file with code metadata and AI summaries. */
   entries: ProjectIndexEntry[]
+  /** One digest per directory, built from the files inside it. */
+  dirs: ProjectDirDigest[]
+  /** Languages, frameworks and entry points, derived from the code. */
+  profile: ProjectCodeProfile
+  memory: ProjectMemoryStats
+}
+
+export interface ProjectDirDigest {
+  /** Directory path relative to the project root ('' for the root). */
+  rel: string
+  depth: number
+  /** Files inside, including subdirectories. */
+  fileCount: number
+  childDirs: number
+  languages: string[]
+  symbols: string[]
+  summaries: string[]
+}
+
+export interface ProjectCodeProfile {
+  languages: { language: string; label: string; files: number }[]
+  frameworks: string[]
+  entryPoints: string[]
+}
+
+export interface ProjectMemoryStats {
+  textFiles: number
+  cachedFiles: number
+  cachedBytes: number
+  budgetBytes: number
+}
+
+/** A file retrieved from project memory (or disk, when not cached). */
+export interface ProjectFileContent {
+  rel: string
+  path: string
+  language: string
+  size: number
+  binary: boolean
+  content: string
+  truncated: boolean
+  source: 'memory' | 'disk'
+  summary?: string
+  /** True when the file is part of the project index. */
+  indexed: boolean
 }
 
 export type SettingsBag = Record<string, unknown>
@@ -221,6 +263,8 @@ export interface KineticAPI {
   projectIndex: {
     get(root: string): Promise<ProjectIndexSnapshot>
     rescan(root: string): Promise<ProjectIndexSnapshot>
+    /** Retrieve any file from project memory (cached contents, disk fallback). */
+    file(root: string, rel: string): Promise<ProjectFileContent>
     /** Batch-upsert AI file summaries into the index (persisted). */
     setSummaries(
       root: string,

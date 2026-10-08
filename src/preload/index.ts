@@ -137,6 +137,8 @@ const api: KineticAPI = {
       ipcRenderer.invoke('project-index:get', root) as Promise<import('../shared/types').ProjectIndexSnapshot>,
     rescan: (root: string) =>
       ipcRenderer.invoke('project-index:rescan', root) as Promise<import('../shared/types').ProjectIndexSnapshot>,
+    file: (root: string, rel: string) =>
+      ipcRenderer.invoke('project-index:file', { root, rel }) as Promise<import('../shared/types').ProjectFileContent>,
     setSummaries: (root: string, items: { rel: string; summary: string; summaryAt: number }[]) =>
       ipcRenderer.invoke('project-index:summaries', { root, items }) as Promise<void>,
   },

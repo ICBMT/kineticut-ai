@@ -27,7 +27,7 @@ import {
   X,
 } from 'lucide-react'
 import { renderMarkdown } from '../lib/markdown'
-import { prescanProject, useKnowledgeStore } from '../lib/projectKnowledge'
+import { buildUnderstanding, useKnowledgeStore } from '../lib/projectKnowledge'
 import { refreshProjectBrief } from '../lib/projectBrief'
 import { cn, basename } from '../lib/utils'
 import { editorRef } from '../lib/editorRef'
@@ -38,7 +38,7 @@ import { useAppStore } from '../store/app'
 import { useAIStore, type ChatMessage, type ToolEventEntry } from '../store/ai'
 import { ActivityPanel } from './ChatActivity'
 import { ModelSelect } from './ModelSelect'
-import { Dropdown, EmptyState, IconButton, Segmented, Spinner, type MenuItem } from './ui'
+import { EmptyState, IconButton, Segmented, Spinner } from './ui'
 
 /* ------------------------------ markdown body ------------------------------- */
 
@@ -366,19 +366,19 @@ function ProjectBriefCard() {
         <Database size={12} className="text-[var(--text-faint)] shrink-0" />
         <span className="text-[10px] text-[var(--text-faint)] flex-1 truncate">
           {knowledge.scanning
-            ? `Prescanning… ${knowledge.done}/${knowledge.total} files`
+            ? `Understanding… ${knowledge.done}/${knowledge.total} files`
             : knowledge.summarized > 0
-              ? `AI knowledge: ${knowledge.summarized} of ${knowledge.files} files understood`
-              : 'AI knowledge: not built yet'}
+              ? `Project understanding: ${knowledge.summarized} of ${knowledge.files} files`
+              : 'Project understanding: not built yet'}
         </span>
         {knowledge.scanning && <Spinner size={10} />}
         {!knowledge.scanning && (
           <button
             className="btn !py-0.5 !px-2 text-[10px] shrink-0"
-            title="Summarize every file so the AI understands the whole project"
-            onClick={() => void prescanProject()}
+            title="Read the project top-down and summarize every file so the AI understands it"
+            onClick={() => void buildUnderstanding()}
           >
-            {knowledge.summarized > 0 ? 'Rescan' : 'Prescan'}
+            {knowledge.summarized > 0 ? 'Update' : 'Build'}
           </button>
         )}
       </div>
@@ -538,20 +538,6 @@ export function ChatPanel() {
     if (m.role === 'assistant') lastAssistant = i
   })
 
-  const historyItems: MenuItem[] = [
-    ...sessions.map((s) => ({
-      label: s.title || 'New chat',
-      icon: s.mode === 'agent' ? Bot : MessageSquare,
-      onClick: () => ai.setActive(s.id),
-    })),
-    { type: 'separator' as const },
-    {
-      label: 'New chat',
-      icon: MessageSquarePlus,
-      onClick: () => ai.newSession(session?.mode || 'chat'),
-    },
-  ]
-
   return (
     <div className="sidebar-inner">
       <div className="panel-header !normal-case !tracking-normal">
@@ -560,15 +546,11 @@ export function ChatPanel() {
           AI Chat
         </span>
         <div className="panel-header-actions">
-          <Dropdown
-            align="right"
-            width={220}
-            trigger={
-              <span className="icon-btn cursor-pointer">
-                <History size={14} />
-              </span>
-            }
-            items={historyItems}
+          <IconButton
+            icon={History}
+            size={14}
+            tooltip="Projects & chat history (Ctrl+Alt+H)"
+            onClick={() => useAppStore.getState().setHistoryOpen(true)}
           />
           <IconButton
             icon={MessageSquarePlus}
