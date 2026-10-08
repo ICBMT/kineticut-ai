@@ -1,0 +1,182 @@
+{
+  "name": "kineticut-ai",
+  "displayName": "Kineticut AI",
+  "description": "AI-native coding assistant for VS Code: chat participant, agent tools, inline completions, and AI code actions powered by Ollama (local) and frontier APIs.",
+  "version": "0.1.0",
+  "publisher": "icbmt",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Programming Languages",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "kineticut-ai.chat",
+        "name": "kineticut",
+        "fullName": "Kineticut AI",
+        "description": "AI-native coding assistant (Ollama local + frontier APIs)",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "explain",
+            "description": "Explain the selection or file"
+          },
+          {
+            "name": "refactor",
+            "description": "Refactor the selection with AI"
+          },
+          {
+            "name": "tests",
+            "description": "Generate tests for the selection or file"
+          },
+          {
+            "name": "fix",
+            "description": "Fix problems in the active editor"
+          }
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "command": "kineticut-ai.openChat",
+        "title": "Kineticut AI: Open Chat",
+        "category": "Kineticut AI"
+      },
+      {
+        "command": "kineticut-ai.explainSelection",
+        "title": "Kineticut AI: Explain Selection",
+        "category": "Kineticut AI"
+      },
+      {
+        "command": "kineticut-ai.refactorSelection",
+        "title": "Kineticut AI: Refactor Selection",
+        "category": "Kineticut AI"
+      },
+      {
+        "command": "kineticut-ai.generateTests",
+        "title": "Kineticut AI: Generate Tests",
+        "category": "Kineticut AI"
+      },
+      {
+        "command": "kineticut-ai.fixProblems",
+        "title": "Kineticut AI: Fix Problems with AI",
+        "category": "Kineticut AI"
+      },
+      {
+        "command": "kineticut-ai.configure",
+        "title": "Kineticut AI: Configure Providers…",
+        "category": "Kineticut AI"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "kineticut-ai.openChat",
+        "key": "ctrl+shift+alt+k",
+        "mac": "cmd+shift+alt+k"
+      },
+      {
+        "command": "kineticut-ai.explainSelection",
+        "key": "ctrl+alt+i",
+        "mac": "cmd+alt+i"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "kineticut-ai.explainSelection",
+          "when": "editorHasSelection",
+          "group": "kineticut@1"
+        },
+        {
+          "command": "kineticut-ai.refactorSelection",
+          "when": "editorHasSelection",
+          "group": "kineticut@2"
+        },
+        {
+          "command": "kineticut-ai.generateTests",
+          "when": "editorHasSelection",
+          "group": "kineticut@3"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "kineticut-ai.explainSelection",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "kineticut-ai.refactorSelection",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "kineticut-ai.generateTests",
+          "when": "editorHasSelection"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Kineticut AI",
+      "properties": {
+        "kineticut.provider.type": {
+          "type": "string",
+          "enum": [
+            "ollama",
+            "openai",
+            "anthropic",
+            "gemini"
+          ],
+          "default": "ollama",
+          "description": "AI provider backend."
+        },
+        "kineticut.provider.baseUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:11434",
+          "description": "Provider base URL (Ollama default: http://127.0.0.1:11434)."
+        },
+        "kineticut.provider.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key for frontier providers (stored locally)."
+        },
+        "kineticut.chat.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model used for chat (e.g. qwen2.5-coder:7b, claude-sonnet-4-5, gpt-5). Leave empty to auto-pick the first available."
+        },
+        "kineticut.inline.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model used for inline (ghost text) completions."
+        },
+        "kineticut.inline.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable AI inline completions."
+        },
+        "kineticut.agent.autoApprove": {
+          "type": "boolean",
+          "default": false,
+          "description": "Apply agent edits without asking (use with care)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.6.0"
+  }
+}

@@ -1,0 +1,318 @@
+import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
+import { api } from '../api'
+import type { FileTree, GitStatus, SystemInfo } from '../../shared/types'
+
+export type SidebarView = 'explorer' | 'search' | 'git' | 'chat' | 'settings'
+
+export interface Toast {
+  id: string
+  kind: 'info' | 'success' | 'error' | 'warning'
+  title: string
+  message?: string
+  duration?: number
+}
+
+export interface DiffRequest {
+  path: string
+  original: string
+  modified: string
+  language: string
+  title?: string
+  onApply?: (modified: string) => void | Promise<void>
+  resolve: (ok: boolean) => void
+}
+
+export interface ConfirmRequest {
+  title: string
+  message: string
+  detail?: string
+  confirmLabel?: string
+  danger?: boolean
+  resolve: (ok: boolean) => void
+}
+
+export interface PromptRequest {
+  title: string
+  label: string
+  placeholder?: string
+  initial?: string
+  resolve: (value: string | null) => void
+}
+
+export interface EditorSelectionInfo {
+  path: string
+  text: string
+  label: string
+  startLineNumber: number
+  startColumn: number
+  endLineNumber: number
+  endColumn: number
+}
+
+export interface ProjectBrief {
+  text: string
+  at: number
+  folder: string
+}
+
+interface AppState {
+  ready: boolean
+  system: SystemInfo | null
+  folder: string | null
+  recentFolders: string[]
+  /** Projects & chat history panel. */
+  historyOpen: boolean
+  recentFiles: string[]
+  fileIndex: FileTree | null
+  /** Project sidebar (explorer/search/git/settings) visibility. */
+  sidebarVisible: boolean
+  sidebarView: SidebarView
+  sidebarWidth: number
+  /** AI chat sidebar visibility + width (independent of the project sidebar). */
+  chatVisible: boolean
+  chatWidth: number
+  panelOpen: boolean
+  panelHeight: number
+  panelWidth: number
+
+  gitStatus: GitStatus | null
+  gitLoading: boolean
+
+  projectBrief: ProjectBrief | null
+  briefLoading: boolean
+
+  problems: { errors: number; warnings: number }
+  selectionInfo: {
+    line: number
+    column: number
+    selected: number
+    /** Monaco language id of the active file. */
+    language?: string
+    tabSize?: number
+    insertSpaces?: boolean
+    eol?: 'LF' | 'CRLF'
+  } | null
+  editorSelection: EditorSelectionInfo | null
+  askAiAnchor: { x: number; y: number } | null
+
+  toasts: Toast[]
+  diffRequest: DiffRequest | null
+  confirmRequest: ConfirmRequest | null
+  promptRequest: PromptRequest | null
+  paletteOpen: boolean
+  shortcutsOpen: boolean
+  quickOpenOpen: boolean
+
+  setReady(v: boolean): void
+  setSystem(s: SystemInfo): void
+  setFolder(path: string | null): void
+  setFileIndex(t: FileTree | null): void
+  setSidebarVisible(v: boolean): void
+  toggleSidebar(): void
+  setSidebarView(v: SidebarView): void
+  /** Activity-bar click: show the view, or hide the sidebar when it is already active (VS Code toggle). */
+  toggleSidebarView(v: SidebarView): void
+  setSidebarWidth(w: number): void
+  setChatVisible(v: boolean): void
+  toggleChat(): void
+  setChatWidth(w: number): void
+  setPanelOpen(v: boolean): void
+  togglePanel(): void
+  setPanelHeight(h: number): void
+  setPanelWidth(w: number): void
+
+  refreshGit(): Promise<void>
+
+  setProjectBrief(b: ProjectBrief | null): void
+  setBriefLoading(v: boolean): void
+
+  setProblems(p: { errors: number; warnings: number }): void
+  setSelectionInfo(s: NonNullable<AppState['selectionInfo']> | null): void
+  setEditorSelection(s: EditorSelectionInfo | null): void
+  setAskAiAnchor(a: { x: number; y: number } | null): void
+
+  toast(t: Omit<Toast, 'id'>): void
+  dismissToast(id: string): void
+
+  requestDiff(req: Omit<DiffRequest, 'resolve'> & { resolve: (ok: boolean) => void }): void
+  clearDiff(): void
+  requestConfirm(req: Omit<ConfirmRequest, 'resolve'> & { resolve: (ok: boolean) => void }): void
+  clearConfirm(): void
+  requestPrompt(req: Omit<PromptRequest, 'resolve'> & { resolve: (value: string | null) => void }): void
+  clearPrompt(): void
+
+  setPaletteOpen(v: boolean): void
+  setShortcutsOpen(v: boolean): void
+  setQuickOpenOpen(v: boolean): void
+  setHistoryOpen(v: boolean): void
+  removeRecentFolder(path: string): void
+}
+
+export const useAppStore = create<AppState>()(
+  persist(
+    (set, get) => ({
+      ready: false,
+      system: null,
+      folder: null,
+      recentFolders: [],
+      recentFiles: [],
+      fileIndex: null,
+      sidebarVisible: true,
+      sidebarView: 'explorer',
+      sidebarWidth: 260,
+      chatVisible: false,
+      chatWidth: 380,
+      panelOpen: false,
+      panelHeight: 260,
+      panelWidth: 460,
+      gitStatus: null,
+      gitLoading: false,
+      projectBrief: null,
+      briefLoading: false,
+      problems: { errors: 0, warnings: 0 },
+      selectionInfo: null,
+      editorSelection: null,
+      askAiAnchor: null,
+      toasts: [],
+      diffRequest: null,
+      confirmRequest: null,
+      promptRequest: null,
+      paletteOpen: false,
+      shortcutsOpen: false,
+      quickOpenOpen: false,
+      historyOpen: false,
+
+      setReady: (v) => set({ ready: v }),
+      setSystem: (s) => set({ system: s }),
+
+      setFolder: (path) => {
+        set((s) => {
+          const recentFolders = path
+            ? [path, ...s.recentFolders.filter((p) => p !== path)].slice(0, 10)
+            : s.recentFolders
+          return {
+            folder: path,
+            recentFolders,
+            fileIndex: null,
+            gitStatus: null,
+            projectBrief: null,
+            briefLoading: false,
+          }
+        })
+        if (path) void get().refreshGit()
+      },
+
+      setFileIndex: (t) => set({ fileIndex: t }),
+      setSidebarVisible: (v) => set({ sidebarVisible: v }),
+      toggleSidebar: () => set((s) => ({ sidebarVisible: !s.sidebarVisible })),
+      setSidebarView: (v) => {
+        if (v === 'chat') {
+          // The chat lives in its own sidebar slot.
+          set({ chatVisible: true })
+          return
+        }
+        set({ sidebarView: v, sidebarVisible: true })
+      },
+      toggleSidebarView: (v) => {
+        if (v === 'chat') {
+          set((s) => ({ chatVisible: !s.chatVisible }))
+          return
+        }
+        // Clicking the activity-bar button of the ACTIVE view hides the
+        // sidebar (VS Code behavior); any other click shows + switches.
+        set((s) => ({
+          sidebarView: v,
+          sidebarVisible: s.sidebarVisible && s.sidebarView === v ? false : true,
+        }))
+      },
+      setSidebarWidth: (w) => set({ sidebarWidth: Math.min(600, Math.max(180, w)) }),
+      setChatVisible: (v) => set({ chatVisible: v }),
+      toggleChat: () => set((s) => ({ chatVisible: !s.chatVisible })),
+      setChatWidth: (w) => set({ chatWidth: Math.min(700, Math.max(280, w)) }),
+      setPanelOpen: (v) => set({ panelOpen: v }),
+      togglePanel: () => set((s) => ({ panelOpen: !s.panelOpen })),
+      setPanelHeight: (h) => set({ panelHeight: Math.min(700, Math.max(120, h)) }),
+      setPanelWidth: (w) => set({ panelWidth: Math.min(900, Math.max(280, w)) }),
+
+      refreshGit: async () => {
+        const folder = get().folder
+        if (!folder) {
+          set({ gitStatus: null })
+          return
+        }
+        set({ gitLoading: true })
+        try {
+          const status = await api.git.status(folder)
+          set({ gitStatus: status, gitLoading: false })
+        } catch {
+          set({ gitStatus: null, gitLoading: false })
+        }
+      },
+
+      setProjectBrief: (b) => set({ projectBrief: b }),
+      setBriefLoading: (v) => set({ briefLoading: v }),
+
+      setProblems: (p) => set({ problems: p }),
+      setSelectionInfo: (s) => set({ selectionInfo: s }),
+      setEditorSelection: (s) => set({ editorSelection: s }),
+      setAskAiAnchor: (a) => set({ askAiAnchor: a }),
+
+      toast: (t) => {
+        const id = Math.random().toString(36).slice(2)
+        set((s) => ({ toasts: [...s.toasts, { ...t, id }] }))
+      },
+      dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+
+      requestDiff: (req) => set({ diffRequest: req as DiffRequest }),
+      clearDiff: () => set({ diffRequest: null }),
+      requestConfirm: (req) => set({ confirmRequest: req as ConfirmRequest }),
+      clearConfirm: () => set({ confirmRequest: null }),
+      requestPrompt: (req) => set({ promptRequest: req as PromptRequest }),
+      clearPrompt: () => set({ promptRequest: null }),
+
+      setPaletteOpen: (v) => set({ paletteOpen: v }),
+      setShortcutsOpen: (v) => set({ shortcutsOpen: v }),
+      setQuickOpenOpen: (v) => set({ quickOpenOpen: v }),
+      setHistoryOpen: (v) => set({ historyOpen: v }),
+      removeRecentFolder: (path) => set((s) => ({ recentFolders: s.recentFolders.filter((p) => p !== path) })),
+    }),
+    {
+      name: 'kineticut.app.v3',
+      // Every launch starts empty: no folder is reopened. Recent projects stay
+      // available from the welcome screen and the History panel.
+      partialize: (s) => ({
+        recentFolders: s.recentFolders,
+        recentFiles: s.recentFiles,
+        sidebarView: s.sidebarView,
+        sidebarWidth: s.sidebarWidth,
+        sidebarVisible: s.sidebarVisible,
+        chatVisible: s.chatVisible,
+        chatWidth: s.chatWidth,
+        panelOpen: s.panelOpen,
+        panelHeight: s.panelHeight,
+        panelWidth: s.panelWidth,
+      }),
+      version: 3,
+      merge: (persisted, current) => ({
+        ...current,
+        ...(persisted as object),
+        folder: null,
+        fileIndex: null,
+        gitStatus: null,
+        projectBrief: null,
+      }),
+      migrate: (persisted: any) => {
+        // v2 stored the chat as a sidebar view; it now has its own slot.
+        if (persisted && persisted.sidebarView === 'chat') {
+          return {
+            ...persisted,
+            sidebarView: 'explorer',
+            chatVisible: true,
+          }
+        }
+        return persisted
+      },
+    },
+  ),
+)

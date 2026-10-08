@@ -1,0 +1,104 @@
+{
+  "name": "kineticut-ai",
+  "version": "0.1.0",
+  "description": "Kineticut AI — an AI-native code editor. Electron desktop app with local (Ollama) and frontier model support, built on the VS Code editor engine, with a full VS Code fork under /vscode.",
+  "main": "./out/main/index.js",
+  "author": "ICBMT",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "dev:web": "concurrently -k -n web,api,mock \"vite --config vite.config.ts\" \"node dev-server/index.mjs\" \"node dev-server/mock-ollama.mjs\"",
+    "build": "electron-vite build",
+    "build:web": "vite build --config vite.config.ts",
+    "preview:web": "concurrently -k -n web,api,mock \"vite preview --config vite.config.ts --outDir dist-web\" \"node dev-server/index.mjs\" \"node dev-server/mock-ollama.mjs\"",
+    "start": "electron-vite preview",
+    "dist": "npm run build && electron-builder",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "smoke": "node scripts/smoke-render.mjs",
+    "icon": "node scripts/make-icon.mjs",
+    "mock:ollama": "node dev-server/mock-ollama.mjs"
+  },
+  "dependencies": {
+    "@fontsource/cascadia-code": "^5.1.0",
+    "@fontsource/fira-code": "^5.1.0",
+    "@fontsource/inter": "^5.1.0",
+    "@fontsource/jetbrains-mono": "^5.1.0",
+    "@monaco-editor/react": "^4.7.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
+    "chokidar": "^3.6.0",
+    "clsx": "^2.1.1",
+    "dompurify": "^3.2.0",
+    "highlight.js": "^11.10.0",
+    "lucide-react": "^0.468.0",
+    "marked": "^15.0.0",
+    "monaco-editor": "^0.52.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "simple-git": "^3.27.0",
+    "tailwind-merge": "^2.5.0",
+    "zustand": "^4.5.5"
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "latest",
+    "@types/dompurify": "^3.0.5",
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/ws": "^8.5.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "concurrently": "^9.1.0",
+    "electron": "latest",
+    "electron-builder": "latest",
+    "electron-vite": "^3.1.0",
+    "jsdom": "^30.1.2",
+    "pngjs": "^7.0.0",
+    "tailwindcss": "latest",
+    "typescript": "~5.8.0",
+    "vite": "^6.3.0",
+    "ws": "^8.18.0"
+  },
+  "build": {
+    "appId": "com.icbmt.kineticut-ai",
+    "productName": "Kineticut AI",
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "assets/icon.png",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        "nsis",
+        "zip"
+      ]
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development"
+    }
+  }
+}
