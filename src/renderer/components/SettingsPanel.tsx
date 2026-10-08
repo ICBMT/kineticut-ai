@@ -565,7 +565,7 @@ export function SettingsPanel() {
 
         <SectionTitle icon={PanelLeft} title="Layout" />
         <div className="card">
-          <SettingRow title="Sidebar position">
+          <SettingRow title="Project sidebar position" desc="Explorer / search / git / settings">
             <Segmented
               value={settings.sidebarPosition}
               options={[
@@ -573,6 +573,16 @@ export function SettingsPanel() {
                 { value: 'right', label: 'Right' },
               ]}
               onChange={(v) => settings.set('sidebarPosition', v)}
+            />
+          </SettingRow>
+          <SettingRow title="AI chat sidebar position" desc="Shown side by side with the project sidebar">
+            <Segmented
+              value={settings.chatPosition}
+              options={[
+                { value: 'left', label: 'Left' },
+                { value: 'right', label: 'Right' },
+              ]}
+              onChange={(v) => settings.set('chatPosition', v)}
             />
           </SettingRow>
           <SettingRow title="Panel position" desc="Where the terminal panel lives">

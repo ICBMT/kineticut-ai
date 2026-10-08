@@ -218,6 +218,10 @@ export function createHttpApi(): KineticAPI {
       get: () => http<SettingsBag>('/api/settings'),
       set: (patch) => post<SettingsBag>('/api/settings', patch),
     },
+    projectIndex: {
+      get: (root) => http<any>(`/api/project-index${qs({ root })}`),
+      rescan: (root) => post<any>('/api/project-index/rescan', { root }),
+    },
     win: {
       minimize: () => {},
       maximize: () => {},

@@ -118,6 +118,22 @@ export interface SystemInfo {
   isElectron: boolean
 }
 
+/** Snapshot of the main-process project index (see src/main/projectIndex.ts). */
+export interface ProjectIndexSnapshot {
+  folder: string
+  name: string
+  fileCount: number
+  topLevel: string[]
+  /** Shallowest-first list of workspace-relative file paths (capped). */
+  treePaths: string[]
+  /** Cached excerpts of key files (package.json, README, tsconfig…). */
+  keyFiles: Record<string, string>
+  packageJson?: any
+  readme?: string
+  gitBranch?: string | null
+  scannedAt: number
+}
+
 export type SettingsBag = Record<string, unknown>
 
 export interface KineticAPI {
@@ -167,6 +183,11 @@ export interface KineticAPI {
   settings: {
     get(): Promise<SettingsBag>
     set(patch: SettingsBag): Promise<SettingsBag>
+  }
+  /** Incremental, persistent workspace index (fast AI project analysis). */
+  projectIndex: {
+    get(root: string): Promise<ProjectIndexSnapshot>
+    rescan(root: string): Promise<ProjectIndexSnapshot>
   }
   win: {
     minimize(): void

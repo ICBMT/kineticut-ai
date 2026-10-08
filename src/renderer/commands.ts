@@ -7,6 +7,7 @@ import {
   ArrowDownToLine,
   ArrowLeftRight,
   Bot,
+  BrainCircuit,
   FileCode,
   FilePlus,
   FolderOpen,
@@ -40,6 +41,7 @@ import {
   triggerInlineCompletion,
 } from './lib/aiActions'
 import { editorRef } from './lib/editorRef'
+import { refreshProjectBrief } from './lib/projectBrief'
 import { basename, joinPath, sleep } from './lib/utils'
 import { useAppStore } from './store/app'
 import { useAIStore } from './store/ai'
@@ -214,7 +216,8 @@ export const COMMANDS: Command[] = [
   { id: 'view.quickOpen', title: 'Go to File…', category: 'View', icon: Search, shortcut: 'Ctrl+P', keywords: 'open file find', run: () => useAppStore.getState().setQuickOpenOpen(true) },
   { id: 'view.toggleSidebar', title: 'Toggle Sidebar', category: 'View', icon: PanelLeft, shortcut: 'Ctrl+B', keywords: 'explorer', run: () => useAppStore.getState().toggleSidebar() },
   { id: 'view.togglePanel', title: 'Toggle Panel', category: 'View', icon: PanelBottom, shortcut: 'Ctrl+`', keywords: 'terminal output', run: () => useAppStore.getState().togglePanel() },
-  { id: 'view.showChat', title: 'Show AI Chat', category: 'View', icon: MessageSquarePlus, keywords: 'ai assistant', run: () => useAppStore.getState().setSidebarView('chat') },
+  { id: 'view.showChat', title: 'Show AI Chat', category: 'View', icon: MessageSquarePlus, keywords: 'ai assistant sidebar', run: () => useAppStore.getState().setChatVisible(true) },
+  { id: 'view.toggleChat', title: 'Toggle AI Chat Sidebar', category: 'View', icon: MessageSquarePlus, shortcut: 'Ctrl+Alt+B', keywords: 'ai assistant sidebar panel', run: () => useAppStore.getState().toggleChat() },
   { id: 'view.showExplorer', title: 'Show Explorer', category: 'View', icon: PanelLeft, keywords: 'files', run: () => useAppStore.getState().setSidebarView('explorer') },
   { id: 'view.showSearch', title: 'Show Search', category: 'View', icon: Search, keywords: 'grep find', run: () => useAppStore.getState().setSidebarView('search') },
   { id: 'view.showGit', title: 'Show Source Control', category: 'View', icon: GitBranch, keywords: 'git commit', run: () => useAppStore.getState().setSidebarView('git') },
@@ -250,7 +253,11 @@ export const COMMANDS: Command[] = [
   // AI
   { id: 'ai.newChat', title: 'New Chat', category: 'AI', icon: MessageSquarePlus, keywords: 'assistant conversation', run: () => {
     useAIStore.getState().newSession('chat')
-    useAppStore.getState().setSidebarView('chat')
+    useAppStore.getState().setChatVisible(true)
+  } },
+  { id: 'ai.analyzeProject', title: 'Analyze Project with AI', category: 'AI', icon: BrainCircuit, keywords: 'project brief scan understand workspace overview', run: () => {
+    useAppStore.getState().setChatVisible(true)
+    void refreshProjectBrief()
   } },
   { id: 'ai.toggleAgent', title: 'Toggle Agent Mode', category: 'AI', icon: Bot, shortcut: 'Ctrl+Shift+A', keywords: 'tools autonomous', run: () => {
     const ai = useAIStore.getState()

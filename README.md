@@ -14,9 +14,14 @@ models via **Ollama**, frontier models (Claude, GPT, Gemini, …) via API. Built
   *Agent mode* that reads/searches your workspace, proposes file edits (reviewed in
   a side-by-side diff), and runs commands (with confirmation). Works with Ollama
   locally and OpenAI-compatible / Anthropic / Gemini APIs.
-- **The AI knows your project** — on folder open, Kineticut AI automatically
-  analyzes the workspace (manifest, README, structure, key files) and writes a
-  **project brief**; the brief is injected into every chat and agent prompt.
+- **The AI knows your project** — ask it to *Analyze Project* (button, command
+  palette, or AI menu) and it writes a **project brief** from a persistent,
+  incremental **project index** in the main process (chunked scans, disk-cached,
+  kept fresh by file watchers — fast and light on resources). Scanning is always
+  on demand, never automatic. The brief is injected into every chat and agent prompt.
+- **Dual sidebars** — the project sidebar (explorer/search/git/settings) and the
+  AI chat sidebar are independent and visible **at the same time**, each on its
+  configured side (left/right, swappable in Settings → Layout).
 - **Inline completions** — AI ghost text as you type (Tab to accept), powered by the
   model of your choice.
 - **AI code actions** — *Explain* (Ctrl+I), *Refactor selection*, *Generate tests*,
@@ -77,6 +82,7 @@ built-in **mock Ollama** so the whole AI pipeline works out of the box.
 | `Ctrl+B` | Toggle sidebar |
 | `Ctrl+I` | Explain code with AI |
 | `Ctrl+Shift+A` | Toggle agent mode |
+| `Ctrl+Alt+B` | Toggle AI chat sidebar |
 | `Ctrl+Shift+I` | Format document |
 | `Ctrl+G` | Go to line |
 | `Ctrl+,` | Settings |

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Editor from '@monaco-editor/react'
 import * as monaco from 'monaco-editor'
 import {
+  BrainCircuit,
   FileImage,
   FolderOpen,
   MessageSquareText,
@@ -14,6 +15,7 @@ import {
 import { api } from '../api'
 import { attachSelectionToChat } from '../lib/aiActions'
 import { editorRef } from '../lib/editorRef'
+import { refreshProjectBrief } from '../lib/projectBrief'
 import {
   deleteSnapshot,
   getSnapshot,
@@ -79,9 +81,19 @@ function Welcome() {
           <FolderOpen size={14} />
           Open Folder
         </button>
-        <button className="btn" onClick={() => useAppStore.getState().setSidebarView('chat')}>
+        <button className="btn" onClick={() => useAppStore.getState().setChatVisible(true)}>
           <MessageSquareText size={14} />
           Chat with AI
+        </button>
+        <button
+          className="btn"
+          onClick={() => {
+            useAppStore.getState().setChatVisible(true)
+            void refreshProjectBrief()
+          }}
+        >
+          <BrainCircuit size={14} />
+          Analyze Project
         </button>
         <button className="btn" onClick={() => useAppStore.getState().setSidebarView('settings')}>
           <Settings size={14} />

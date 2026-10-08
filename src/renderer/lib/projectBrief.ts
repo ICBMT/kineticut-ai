@@ -1,12 +1,13 @@
 /**
  * Project understanding: gather workspace context and produce an AI brief
  * about what the project is, what it does, and how to work with it.
- * The brief is shown in the chat panel and injected into the agent/chat
- * system prompts so the AI always knows the open project.
+ *
+ * Scanning is ON DEMAND only (button / command) — nothing runs automatically
+ * when a folder opens. Context comes from the main-process project index
+ * (persistent, incremental, disk-cached), so scanning is fast and light.
  */
 import { api } from '../api'
 import { streamChat } from '../ai/providers'
-import type { ProviderConfig } from '../ai/types'
 import { useAppStore } from '../store/app'
 import { resolveChatModel, useSettingsStore } from '../store/settings'
 
@@ -22,37 +23,75 @@ export interface ProjectContext {
   fileCount: number
 }
 
-/** Collect a bounded snapshot of the workspace for the AI to reason about. */
+/** Collect workspace context — fast path via the project index. */
 export async function gatherProjectContext(folder: string): Promise<ProjectContext> {
+  try {
+    const snap = await api.projectIndex.get(folder)
+    return {
+      folder: snap.folder,
+      name: snap.name,
+      packageJson: snap.packageJson,
+      readme: snap.readme,
+      topLevel: snap.topLevel,
+      treePaths: snap.treePaths,
+      keyFiles: snap.keyFiles,
+      gitBranch: snap.gitBranch,
+      fileCount: snap.fileCount,
+    }
+  } catch {
+    return gatherProjectContextFromFs(folder)
+  }
+}
+
+/** Fallback: gather straight from the fs API (parallel reads, small caps). */
+async function gatherProjectContextFromFs(folder: string): Promise<ProjectContext> {
   const top = await api.fs.list(folder).catch(() => [])
   const topLevel = top.map((e) => e.name)
 
-  let packageJson: any = undefined
-  try {
-    const pj = top.find((e) => e.name === 'package.json' && e.type === 'file')
-    if (pj) {
-      const res = await api.fs.read(pj.path)
-      if (!res.binary) packageJson = JSON.parse(res.content)
-    }
-  } catch {
-    /* ignore */
-  }
+  const keyNames = [
+    'package.json',
+    'tsconfig.json',
+    'Dockerfile',
+    'docker-compose.yml',
+    'pyproject.toml',
+    'requirements.txt',
+    'Cargo.toml',
+    'go.mod',
+    'Makefile',
+  ]
+  const keyEntries = top.filter(
+    (e) => e.type === 'file' && (keyNames.includes(e.name) || /^readme/i.test(e.name)),
+  )
+  const excerpts = await Promise.all(
+    keyEntries.map(async (e) => {
+      try {
+        const res = await api.fs.read(e.path)
+        if (!res.binary && res.content.length < 20000) {
+          return [e.name, res.content.slice(0, 4000)] as const
+        }
+      } catch {
+        /* ignore */
+      }
+      return null
+    }),
+  )
+  const keyFiles: Record<string, string> = {}
+  for (const item of excerpts) if (item) keyFiles[item[0]] = item[1]
 
-  let readme: string | undefined
-  const readmeEntry = top.find((e) => /^readme/i.test(e.name) && e.type === 'file')
-  if (readmeEntry) {
+  let packageJson: any
+  if (keyFiles['package.json']) {
     try {
-      const res = await api.fs.read(readmeEntry.path)
-      if (!res.binary) readme = res.content.slice(0, 3000)
+      packageJson = JSON.parse(keyFiles['package.json'])
     } catch {
       /* ignore */
     }
   }
+  const readmeName = Object.keys(keyFiles).find((k) => /^readme/i.test(k))
 
   let treePaths: string[] = []
   let fileCount = 0
   try {
-    const tree = await api.fs.tree(folder, 4)
+    const tree = await api.fs.tree(folder, 3)
     const walk = (node: any, depth: number) => {
       if (depth > 3) return
       for (const child of node.children || []) {
@@ -68,31 +107,7 @@ export async function gatherProjectContext(folder: string): Promise<ProjectConte
   } catch {
     /* ignore */
   }
-  treePaths = treePaths.slice(0, 400)
-
-  const keyFiles: Record<string, string> = {}
-  for (const name of [
-    'package.json',
-    'tsconfig.json',
-    'Dockerfile',
-    'docker-compose.yml',
-    'pyproject.toml',
-    'requirements.txt',
-    'Cargo.toml',
-    'go.mod',
-    'Makefile',
-  ]) {
-    const entry = top.find((e) => e.name === name && e.type === 'file')
-    if (!entry) continue
-    try {
-      const res = await api.fs.read(entry.path)
-      if (!res.binary && res.content.length < 20000) {
-        keyFiles[name] = res.content.slice(0, 4000)
-      }
-    } catch {
-      /* ignore */
-    }
-  }
+  treePaths = treePaths.slice(0, 150)
 
   let gitBranch: string | null = null
   try {
@@ -105,7 +120,7 @@ export async function gatherProjectContext(folder: string): Promise<ProjectConte
     folder,
     name: packageJson?.name || folder.split(/[/\\]/).pop() || folder,
     packageJson,
-    readme,
+    readme: readmeName ? keyFiles[readmeName]?.slice(0, 2000) : undefined,
     topLevel,
     treePaths,
     keyFiles,
@@ -153,18 +168,18 @@ Do NOT invent facts that are not supported by the context. Be concrete and brief
 <context>
 Project folder: ${ctx.folder}
 Name: ${ctx.name}
-${ctx.packageJson ? `package.json:\n${JSON.stringify(ctx.packageJson, null, 2).slice(0, 4000)}` : ''}
-${ctx.readme ? `README (excerpt):\n${ctx.readme}` : ''}
+${ctx.packageJson ? `package.json:\n${JSON.stringify(ctx.packageJson, null, 2).slice(0, 3000)}` : ''}
+${ctx.readme ? `README (excerpt):\n${ctx.readme.slice(0, 1500)}` : ''}
 ${
   Object.keys(ctx.keyFiles).length
     ? `Key files:\n${Object.entries(ctx.keyFiles)
-        .map(([k, v]) => `--- ${k} ---\n${k === 'package.json' ? v.slice(0, 2000) : v}`)
+        .map(([k, v]) => `--- ${k} ---\n${k === 'package.json' ? v.slice(0, 1500) : v}`)
         .join('\n')}`
     : ''
 }
 Top-level entries: ${ctx.topLevel.join(', ')}
-File tree (${ctx.treePaths.length} files, excerpt):
-${ctx.treePaths.slice(0, 250).join('\n')}
+File tree (${ctx.treePaths.length} files, shallowest first):
+${ctx.treePaths.slice(0, 120).join('\n')}
 git branch: ${ctx.gitBranch || 'unknown'}
 </context>`
 }
@@ -196,7 +211,7 @@ export async function generateProjectBrief(ctx: ProjectContext): Promise<string>
   return out.trim() || buildStaticBrief(ctx)
 }
 
-/** Background refresh of the brief for the currently open folder. */
+/** On-demand refresh of the brief for the currently open folder. */
 export async function refreshProjectBrief(): Promise<void> {
   const app = useAppStore.getState()
   const folder = app.folder
@@ -220,5 +235,3 @@ export function currentBriefText(): string | null {
   if (!brief || !app.folder || brief.folder !== app.folder) return null
   return brief.text
 }
-
-export type { ProviderConfig }

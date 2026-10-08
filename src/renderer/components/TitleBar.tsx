@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import {
+  Bot,
+  BrainCircuit,
   Copy,
+  FileCode,
   FilePlus,
   FolderOpen,
   Github,
@@ -21,8 +24,6 @@ import {
   Wrench,
   X,
   Zap,
-  Bot,
-  FileCode,
 } from 'lucide-react'
 import { api, isElectron } from '../api'
 import { runCommand, KEYBINDINGS } from '../commands'
@@ -137,6 +138,7 @@ export function TitleBar() {
     { icon: PanelBottom, label: 'Toggle Panel', shortcut: 'Ctrl+`', onClick: () => runCommand('view.togglePanel') },
     { type: 'separator' },
     { icon: MessageSquarePlus, label: 'Show AI Chat', onClick: () => runCommand('view.showChat') },
+    { icon: MessageSquarePlus, label: 'Toggle AI Chat Sidebar', shortcut: 'Ctrl+Alt+B', onClick: () => runCommand('view.toggleChat') },
     { icon: FolderOpen, label: 'Show Explorer', onClick: () => runCommand('view.showExplorer') },
     { icon: Search, label: 'Show Search', onClick: () => runCommand('view.showSearch') },
     { type: 'separator' },
@@ -147,6 +149,7 @@ export function TitleBar() {
 
   const aiMenu: MenuItem[] = [
     { icon: MessageSquarePlus, label: 'New Chat', onClick: () => runCommand('ai.newChat') },
+    { icon: BrainCircuit, label: 'Analyze Project with AI', onClick: () => runCommand('ai.analyzeProject') },
     { icon: Bot, label: 'Toggle Agent Mode', shortcut: 'Ctrl+Shift+A', onClick: () => runCommand('ai.toggleAgent') },
     { type: 'separator' },
     { icon: Sparkles, label: 'Explain Code', shortcut: 'Ctrl+I', onClick: () => runCommand('ai.explain') },

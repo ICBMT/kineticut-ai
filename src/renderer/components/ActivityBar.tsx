@@ -3,16 +3,16 @@ import { cn } from '../lib/utils'
 import { useAppStore } from '../store/app'
 import { useAIStore } from '../store/ai'
 
-const items = [
+const projectItems = [
   { view: 'explorer', icon: FolderTree, label: 'Explorer' },
   { view: 'search', icon: Search, label: 'Search' },
   { view: 'git', icon: GitBranch, label: 'Source Control' },
-  { view: 'chat', icon: MessageSquareText, label: 'AI Chat' },
 ] as const
 
 export function ActivityBar() {
   const view = useAppStore((s) => s.sidebarView)
   const visible = useAppStore((s) => s.sidebarVisible)
+  const chatVisible = useAppStore((s) => s.chatVisible)
   const git = useAppStore((s) => s.gitStatus)
   const streaming = useAIStore((s) => s.streaming)
   const changedCount = git
@@ -21,7 +21,7 @@ export function ActivityBar() {
 
   return (
     <div className="activitybar">
-      {items.map((it) => (
+      {projectItems.map((it) => (
         <button
           key={it.view}
           className={cn('activity-item', visible && view === it.view && 'active')}
@@ -32,9 +32,16 @@ export function ActivityBar() {
           {it.view === 'git' && changedCount > 0 && (
             <span className="activity-badge">{changedCount > 99 ? '99+' : changedCount}</span>
           )}
-          {it.view === 'chat' && streaming && <span className="activity-dot" />}
         </button>
       ))}
+      <button
+        className={cn('activity-item', chatVisible && 'active')}
+        title="AI Chat (toggle)"
+        onClick={() => useAppStore.getState().toggleChat()}
+      >
+        <MessageSquareText size={20} />
+        {streaming && <span className="activity-dot" />}
+      </button>
       <div className="activity-spacer" />
       <button
         className={cn('activity-item', visible && view === 'settings' && 'active')}

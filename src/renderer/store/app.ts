@@ -63,9 +63,13 @@ interface AppState {
   recentFolders: string[]
   recentFiles: string[]
   fileIndex: FileTree | null
+  /** Project sidebar (explorer/search/git/settings) visibility. */
   sidebarVisible: boolean
   sidebarView: SidebarView
   sidebarWidth: number
+  /** AI chat sidebar visibility + width (independent of the project sidebar). */
+  chatVisible: boolean
+  chatWidth: number
   panelOpen: boolean
   panelHeight: number
   panelWidth: number
@@ -96,6 +100,9 @@ interface AppState {
   toggleSidebar(): void
   setSidebarView(v: SidebarView): void
   setSidebarWidth(w: number): void
+  setChatVisible(v: boolean): void
+  toggleChat(): void
+  setChatWidth(w: number): void
   setPanelOpen(v: boolean): void
   togglePanel(): void
   setPanelHeight(h: number): void
@@ -137,6 +144,8 @@ export const useAppStore = create<AppState>()(
       sidebarVisible: true,
       sidebarView: 'explorer',
       sidebarWidth: 260,
+      chatVisible: false,
+      chatWidth: 380,
       panelOpen: false,
       panelHeight: 260,
       panelWidth: 460,
@@ -178,8 +187,18 @@ export const useAppStore = create<AppState>()(
       setFileIndex: (t) => set({ fileIndex: t }),
       setSidebarVisible: (v) => set({ sidebarVisible: v }),
       toggleSidebar: () => set((s) => ({ sidebarVisible: !s.sidebarVisible })),
-      setSidebarView: (v) => set({ sidebarView: v, sidebarVisible: true }),
+      setSidebarView: (v) => {
+        if (v === 'chat') {
+          // The chat lives in its own sidebar slot.
+          set({ chatVisible: true })
+          return
+        }
+        set({ sidebarView: v, sidebarVisible: true })
+      },
       setSidebarWidth: (w) => set({ sidebarWidth: Math.min(600, Math.max(180, w)) }),
+      setChatVisible: (v) => set({ chatVisible: v }),
+      toggleChat: () => set((s) => ({ chatVisible: !s.chatVisible })),
+      setChatWidth: (w) => set({ chatWidth: Math.min(700, Math.max(280, w)) }),
       setPanelOpen: (v) => set({ panelOpen: v }),
       togglePanel: () => set((s) => ({ panelOpen: !s.panelOpen })),
       setPanelHeight: (h) => set({ panelHeight: Math.min(700, Math.max(120, h)) }),
@@ -225,7 +244,7 @@ export const useAppStore = create<AppState>()(
       setQuickOpenOpen: (v) => set({ quickOpenOpen: v }),
     }),
     {
-      name: 'kineticut.app.v2',
+      name: 'kineticut.app.v3',
       partialize: (s) => ({
         folder: s.folder,
         recentFolders: s.recentFolders,
@@ -233,11 +252,24 @@ export const useAppStore = create<AppState>()(
         sidebarView: s.sidebarView,
         sidebarWidth: s.sidebarWidth,
         sidebarVisible: s.sidebarVisible,
+        chatVisible: s.chatVisible,
+        chatWidth: s.chatWidth,
         panelOpen: s.panelOpen,
         panelHeight: s.panelHeight,
         panelWidth: s.panelWidth,
       }),
-      version: 2,
+      version: 3,
+      migrate: (persisted: any) => {
+        // v2 stored the chat as a sidebar view; it now has its own slot.
+        if (persisted && persisted.sidebarView === 'chat') {
+          return {
+            ...persisted,
+            sidebarView: 'explorer',
+            chatVisible: true,
+          }
+        }
+        return persisted
+      },
     },
   ),
 )

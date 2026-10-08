@@ -3,7 +3,6 @@ import { Zap } from 'lucide-react'
 import { api } from './api'
 import { installKeybindings } from './commands'
 import { Logo } from './components/Logo'
-import { refreshProjectBrief } from './lib/projectBrief'
 import { syncOpenModelsWithDisk } from './lib/monaco'
 import { cn } from './lib/utils'
 import { applyAppearance, useSettingsStore } from './store/settings'
@@ -48,15 +47,9 @@ async function boot() {
 
 export function App() {
   const ready = useAppStore((s) => s.ready)
-  const sidebarVisible = useAppStore((s) => s.sidebarVisible)
   const folder = useAppStore((s) => s.folder)
   const theme = useSettingsStore((s) => s.theme)
-  const sidebarPosition = useSettingsStore((s) => s.sidebarPosition)
   const panelPosition = useSettingsStore((s) => s.panelPosition)
-  const settingsLoaded = useSettingsStore((s) => s.loaded)
-  const hasModel = useSettingsStore((s) =>
-    s.providers.some((p) => p.models.length > 0),
-  )
 
   useEffect(() => {
     installKeybindings()
@@ -105,13 +98,6 @@ export function App() {
     }
   }, [folder])
 
-  // AI project understanding: brief the model about the open folder
-  // (re-runs when a model becomes available).
-  useEffect(() => {
-    if (!folder || !settingsLoaded) return
-    void refreshProjectBrief()
-  }, [folder, settingsLoaded, hasModel])
-
   if (!ready) {
     return (
       <div className="splash">
@@ -132,12 +118,12 @@ export function App() {
         <TitleBar />
         <div className="app-body">
           <ActivityBar />
-          {sidebarVisible && sidebarPosition === 'left' && <SideBar />}
+          <SideBar slot="left" />
           <div className={cn('app-main', panelPosition === 'right' && 'app-main-row')}>
             <EditorArea />
             <TerminalPanel />
           </div>
-          {sidebarVisible && sidebarPosition === 'right' && <SideBar />}
+          <SideBar slot="right" />
         </div>
         <StatusBar />
         <CommandPalette />

@@ -219,14 +219,17 @@ function ProjectBriefCard() {
           </button>
         </>
       ) : (
-        <div className="text-[11px] text-[var(--text-faint)] mt-1.5">
-          {loading ? 'Analyzing the workspace…' : 'No brief yet.'}
+        <div className="mt-1.5 flex items-center justify-between gap-2">
+          <span className="text-[11px] text-[var(--text-faint)]">
+            {loading ? 'Analyzing the workspace…' : 'Scan the workspace and write a project brief (on demand).'}
+          </span>
           {!loading && (
             <button
-              className="text-[var(--accent)] ml-1"
+              className="btn btn-primary !py-1 !px-2 text-[10px] shrink-0"
               onClick={() => void refreshProjectBrief()}
             >
-              Generate
+              <BrainCircuit size={11} />
+              Analyze
             </button>
           )}
         </div>

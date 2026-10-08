@@ -131,6 +131,12 @@ const api: KineticAPI = {
     get: () => ipcRenderer.invoke('settings:get'),
     set: (patch: SettingsBag) => ipcRenderer.invoke('settings:set', patch),
   },
+  projectIndex: {
+    get: (root: string) =>
+      ipcRenderer.invoke('project-index:get', root) as Promise<import('../shared/types').ProjectIndexSnapshot>,
+    rescan: (root: string) =>
+      ipcRenderer.invoke('project-index:rescan', root) as Promise<import('../shared/types').ProjectIndexSnapshot>,
+  },
   win: {
     minimize: () => ipcRenderer.send('win:minimize'),
     maximize: () => ipcRenderer.send('win:maximize'),

@@ -6,6 +6,7 @@ import { homedir } from 'node:os'
 import { extname, join, relative } from 'node:path'
 import chokidar from 'chokidar'
 import { simpleGit } from 'simple-git'
+import { projectIndexSnapshot, rescanProjectIndex } from './projectIndex'
 import type {
   ExecResult,
   FileEntry,
@@ -804,6 +805,11 @@ export function registerIpc(getWin: () => BrowserWindow | null) {
     await fs.writeFile(settingsPath(), JSON.stringify(next, null, 2), 'utf8')
     return next
   })
+
+  /* ------------------------------ project index ----------------------------- */
+
+  ipcMain.handle('project-index:get', async (_e, root: string) => projectIndexSnapshot(root))
+  ipcMain.handle('project-index:rescan', async (_e, root: string) => rescanProjectIndex(root))
 
   /* ---------------------------------- window --------------------------------- */
 

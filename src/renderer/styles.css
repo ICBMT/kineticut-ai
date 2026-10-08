@@ -400,6 +400,14 @@ button {
   min-width: 0;
   flex-shrink: 0;
 }
+.sidebar[data-slot='right'] {
+  border-right: 0;
+  border-left: 1px solid var(--border-soft);
+}
+.sidebar[data-slot='right'] .sidebar-resizer {
+  right: auto;
+  left: -2px;
+}
 .sidebar-inner {
   flex: 1;
   overflow: hidden;

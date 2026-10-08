@@ -52,7 +52,7 @@ export function StatusBar() {
           <span
             className="sb-item clickable"
             title="Active AI model — click to open chat"
-            onClick={() => useAppStore.getState().setSidebarView('chat')}
+            onClick={() => useAppStore.getState().setChatVisible(true)}
           >
             <span
               className="sb-dot"

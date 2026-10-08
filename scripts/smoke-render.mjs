@@ -183,6 +183,7 @@ async function main() {
   const appStoreMod = await server.ssrLoadModule('/store/app.ts')
   const editorStoreMod = await server.ssrLoadModule('/store/editor.ts')
   const monacoLib = await server.ssrLoadModule('/lib/monaco.ts')
+  const apiMod = await server.ssrLoadModule('/api/index.ts')
   const { useAppStore } = appStoreMod
   const { useEditorStore } = editorStoreMod
 
@@ -191,9 +192,11 @@ async function main() {
   // Let React settle and the initial render land.
   await sleep(1500)
 
-  // Wait for the AI project brief (generated in the background).
+  // Project scanning is ON DEMAND — trigger it explicitly and wait for the brief.
+  const briefMod = await server.ssrLoadModule('/lib/projectBrief.ts')
+  void briefMod.refreshProjectBrief()
   let brief = null
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 60; i++) {
     brief = useAppStore.getState().projectBrief
     if (brief?.text) break
     await sleep(250)
@@ -214,15 +217,47 @@ async function main() {
     ['explorer file tree renders (fs.list via API)', doc.querySelectorAll('.tree-row').length > 5],
     ['status bar shows a model from mock Ollama', /kinetic-coder:7b/.test(text)],
     ['settings loaded (theme applied)', doc.documentElement.dataset.theme === 'dark'],
-    ['AI generated a project brief for the open folder', !!brief && brief.text.length > 20],
+    ['on-demand AI project brief generated', !!brief && brief.text.length > 20],
   ]
+
+  // The main-process project index backs the brief.
+  let indexOk = false
+  try {
+    const snap = await apiMod.api.projectIndex.get(
+      useAppStore.getState().folder || '/home/user/kineticut-ai',
+    )
+    indexOk =
+      snap.fileCount > 50 &&
+      Array.isArray(snap.topLevel) &&
+      snap.topLevel.includes('src') &&
+      !!snap.keyFiles['package.json'] &&
+      snap.name === 'kineticut-ai'
+  } catch {
+    /* ignore */
+  }
+  checks.push(['project index snapshot works (files, key files, name)', indexOk])
+
+  // Dual sidebars: project sidebar + AI chat sidebar visible at the same time,
+  // and the same-side collision rule keeps both visible.
+  let sidebarsOk = false
+  try {
+    useAppStore.getState().setSidebarView('chat')
+    await sleep(400)
+    const two = doc.querySelectorAll('.sidebar').length === 2
+    const settingsMod = await server.ssrLoadModule('/store/settings.ts')
+    settingsMod.useSettingsStore.getState().set('chatPosition', 'left') // collides with project side
+    await sleep(400)
+    sidebarsOk = two && doc.querySelectorAll('.sidebar').length === 2
+  } catch {
+    /* ignore */
+  }
+  checks.push(['project + AI chat sidebars visible simultaneously (left/right, collision-safe)', sidebarsOk])
 
   // Regression: the editor lib can create an EMPTY model before ensureModel
   // runs — ensureModel must fill it (this was the "files appear empty" bug).
   let emptyModelFilled = false
   try {
     const monaco = await server.ssrLoadModule('monaco-editor')
-    const apiMod = await server.ssrLoadModule('/api/index.ts')
     const uri = monaco.Uri.file(TEST_FILE)
     monaco.editor.getModels().forEach((m) => m.dispose())
     monaco.editor.createModel('', 'json', uri) // simulate the lib's empty model

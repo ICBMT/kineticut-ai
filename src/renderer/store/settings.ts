@@ -28,6 +28,7 @@ const PERSIST_KEYS = [
   'density',
   'animations',
   'sidebarPosition',
+  'chatPosition',
   'panelPosition',
   'splitDirection',
   'formatOnSave',
@@ -54,6 +55,7 @@ export interface SettingsState {
   density: Density
   animations: boolean
   sidebarPosition: Side
+  chatPosition: Side
   panelPosition: PanelPosition
   splitDirection: SplitDirection
   formatOnSave: boolean
@@ -102,6 +104,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   density: 'comfortable',
   animations: true,
   sidebarPosition: 'left',
+  chatPosition: 'right',
   panelPosition: 'bottom',
   splitDirection: 'horizontal',
   formatOnSave: false,
@@ -140,6 +143,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       density: bag.density === 'compact' ? 'compact' : 'comfortable',
       animations: bag.animations !== false,
       sidebarPosition: bag.sidebarPosition === 'right' ? 'right' : 'left',
+      chatPosition: bag.chatPosition === 'left' ? 'left' : 'right',
       panelPosition: bag.panelPosition === 'right' ? 'right' : 'bottom',
       splitDirection: bag.splitDirection === 'vertical' ? 'vertical' : 'horizontal',
       formatOnSave: bag.formatOnSave === true,
