@@ -34,6 +34,8 @@ export interface ReadResult {
   binary: boolean
   size: number
   mtime: number
+  /** True when content was truncated to the read limit. */
+  truncated?: boolean
 }
 
 export type FsEventType = 'add' | 'change' | 'unlink' | 'addDir' | 'unlinkDir'

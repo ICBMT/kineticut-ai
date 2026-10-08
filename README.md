@@ -14,18 +14,29 @@ models via **Ollama**, frontier models (Claude, GPT, Gemini, …) via API. Built
   *Agent mode* that reads/searches your workspace, proposes file edits (reviewed in
   a side-by-side diff), and runs commands (with confirmation). Works with Ollama
   locally and OpenAI-compatible / Anthropic / Gemini APIs.
+- **The AI knows your project** — on folder open, Kineticut AI automatically
+  analyzes the workspace (manifest, README, structure, key files) and writes a
+  **project brief**; the brief is injected into every chat and agent prompt.
 - **Inline completions** — AI ghost text as you type (Tab to accept), powered by the
   model of your choice.
 - **AI code actions** — *Explain* (Ctrl+I), *Refactor selection*, *Generate tests*,
   and a **✦ Fix with AI** quick-fix on editor warnings/errors. Heavy edits are always
   reviewed in a diff modal first.
 - **IDE-grade editing** — Monaco (the VS Code editor engine) with TypeScript
-  IntelliSense, multi-tab editing, dirty tracking, quick open (Ctrl+P), command
-  palette (Ctrl+Shift+P), custom dark/light themes.
+  IntelliSense, dirty tracking, quick open (Ctrl+P), command palette (Ctrl+Shift+P),
+  custom dark/light themes, format document (Ctrl+Shift+I), go to line (Ctrl+G),
+  format-on-save.
+- **Multitasking** — **split editor groups** (side-by-side or stacked, up to 4),
+  drag tabs between groups, double-click a tab to split it, "Open to the Side"
+  from the explorer, and sessions (open tabs & layout) restored on restart.
+- **Deep customization** — accent color themes (Ocean/Forest/Sunset/Rose/Mono),
+  editor font family/size/line height, UI density (comfortable/compact), animations
+  toggle, sidebar position (left/right), panel position (bottom/right), split
+  direction — all live, all persisted.
 - **Explorer / Search / Git** — lazy file tree with create/rename/delete, ripgrep
   workspace search, and a source-control panel (stage, unstage, commit, discard).
 - **Integrated terminal** — real PTY (node-pty, with automatic fallbacks), multiple
-  tabs, resizable panel (Ctrl+`).
+  tabs, resizable panel (Ctrl+`), dockable bottom or right.
 - **Works for any project** — open any folder; language support comes from Monaco's
   full language pack.
 - **The VS Code fork** — `vscode/` is a submodule of `microsoft/vscode`; `fork/`
@@ -66,6 +77,8 @@ built-in **mock Ollama** so the whole AI pipeline works out of the box.
 | `Ctrl+B` | Toggle sidebar |
 | `Ctrl+I` | Explain code with AI |
 | `Ctrl+Shift+A` | Toggle agent mode |
+| `Ctrl+Shift+I` | Format document |
+| `Ctrl+G` | Go to line |
 | `Ctrl+,` | Settings |
 | `Tab` | Accept inline completion |
 
@@ -100,6 +113,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design and
 | `npm run preview:web` | Serve the built web preview |
 | `npm run dist` | Package installers with electron-builder |
 | `npm run typecheck` | TypeScript check |
+| `npm run smoke` | Headless render + regression test (needs `dev:web` running) |
 | `npm run icon` | Regenerate `assets/icon.png` from `assets/icon.svg` |
 | `npm run mock:ollama` | Run only the mock Ollama server (:11434) |
 

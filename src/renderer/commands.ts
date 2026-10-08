@@ -3,6 +3,9 @@
  * global keybindings all dispatch through here.
  */
 import {
+  AlignLeft,
+  ArrowDownToLine,
+  ArrowLeftRight,
   Bot,
   FileCode,
   FilePlus,
@@ -19,6 +22,7 @@ import {
   Search,
   Settings,
   Sparkles,
+  SquareSplitVertical,
   SquareTerminal,
   Wand2,
   Wrench,
@@ -36,7 +40,7 @@ import {
   triggerInlineCompletion,
 } from './lib/aiActions'
 import { editorRef } from './lib/editorRef'
-import { basename, joinPath } from './lib/utils'
+import { basename, joinPath, sleep } from './lib/utils'
 import { useAppStore } from './store/app'
 import { useAIStore } from './store/ai'
 import { useEditorStore } from './store/editor'
@@ -54,20 +58,38 @@ export interface Command {
 
 /* ------------------------------- file actions ------------------------------- */
 
+/** Trigger formatting and wait until the model content settles. */
+async function formatEditor(editor: any): Promise<void> {
+  const model = editor.getModel()
+  if (!model) return
+  editor.trigger('keyboard', 'editor.action.formatDocument', {})
+  let prev = model.getValue()
+  for (let i = 0; i < 40; i++) {
+    await sleep(50)
+    const cur = model.getValue()
+    if (cur === prev) return
+    prev = cur
+  }
+}
+
 export async function saveActiveTab(): Promise<void> {
   const editor = editorRef.current
-  const { activePath, markDirty } = useEditorStore.getState()
-  if (!editor || !activePath) return
+  const store = useEditorStore.getState()
+  const tab = store.activeTab()
+  if (!editor || !tab) return
   const model = editor.getModel()
   if (!model) return
   try {
+    if (useSettingsStore.getState().formatOnSave) {
+      await formatEditor(editor)
+    }
     const content = model.getValue()
-    await api.fs.write(activePath, content)
-    markDirty(activePath, false)
+    await api.fs.write(tab.path, content)
+    store.markDirty(tab.path, false)
     useAppStore.getState().toast({
       kind: 'success',
       title: 'Saved',
-      message: basename(activePath),
+      message: basename(tab.path),
       duration: 1800,
     })
   } catch (err) {
@@ -84,11 +106,12 @@ export async function saveAllTabs(): Promise<void> {
   const store = useEditorStore.getState()
   if (!editor) return
   const model = editor.getModel()
+  const activeTab = store.activeTab()
   let saved = 0
-  for (const tab of store.tabs) {
+  for (const tab of store.allTabs()) {
     if (!store.dirty[tab.path]) continue
     try {
-      if (model && tab.path === store.activePath) {
+      if (model && activeTab && tab.path === activeTab.path) {
         await api.fs.write(tab.path, model.getValue())
       } else {
         const res = await api.fs.read(tab.path)
@@ -142,6 +165,37 @@ async function newFile(): Promise<void> {
   }
 }
 
+function formatDocument(): void {
+  const editor = editorRef.current
+  if (!editor) return
+  try {
+    editor.trigger('keyboard', 'editor.action.formatDocument', {})
+  } catch {
+    /* no formatter for this language */
+  }
+}
+
+async function goToLine(): Promise<void> {
+  const editor = editorRef.current
+  if (!editor) return
+  const value = await new Promise<string | null>((resolve) => {
+    useAppStore.getState().requestPrompt({
+      title: 'Go to Line',
+      label: 'Line number',
+      placeholder: 'e.g. 42',
+      resolve,
+    })
+  })
+  const line = Number.parseInt(String(value || ''), 10)
+  if (!Number.isFinite(line) || line < 1) return
+  const model = editor.getModel()
+  if (!model) return
+  const target = Math.min(line, model.getLineCount())
+  editor.revealLineInCenter(target)
+  editor.setPosition({ lineNumber: target, column: 1 })
+  editor.focus()
+}
+
 /* -------------------------------- the registry ------------------------------ */
 
 export const COMMANDS: Command[] = [
@@ -151,8 +205,8 @@ export const COMMANDS: Command[] = [
   { id: 'file.save', title: 'Save', category: 'File', icon: Save, shortcut: 'Ctrl+S', keywords: 'write disk', run: saveActiveTab },
   { id: 'file.saveAll', title: 'Save All', category: 'File', icon: SaveAll, shortcut: 'Ctrl+Shift+S', keywords: 'write disk all', run: saveAllTabs },
   { id: 'file.closeTab', title: 'Close Editor', category: 'File', icon: X, shortcut: 'Ctrl+W', keywords: 'tab', run: () => {
-    const { activePath, closeTab } = useEditorStore.getState()
-    if (activePath) closeTab(activePath)
+    const tab = useEditorStore.getState().activeTab()
+    if (tab) useEditorStore.getState().closeTab(tab.path)
   } },
 
   // View
@@ -175,6 +229,22 @@ export const COMMANDS: Command[] = [
   { id: 'view.zoomOut', title: 'Zoom Out', category: 'View', icon: Zap, keywords: 'font size editor', run: () => {
     const s = useSettingsStore.getState()
     s.set('editorFontSize', Math.max(9, s.editorFontSize - 1))
+  } },
+
+  // Editor
+  { id: 'editor.format', title: 'Format Document', category: 'Editor', icon: AlignLeft, shortcut: 'Ctrl+Shift+I', keywords: 'prettier format code', run: formatDocument },
+  { id: 'editor.goToLine', title: 'Go to Line…', category: 'Editor', icon: ArrowDownToLine, shortcut: 'Ctrl+G', keywords: 'jump navigate line number', run: goToLine },
+  { id: 'editor.split', title: 'Split Editor', category: 'Editor', icon: SquareSplitVertical, keywords: 'side by side multitask groups', run: () => {
+    const store = useEditorStore.getState()
+    if (store.groups.length >= 4) {
+      useAppStore.getState().toast({ kind: 'info', title: 'Maximum of 4 editor groups' })
+      return
+    }
+    store.splitGroup()
+  } },
+  { id: 'view.toggleSplitDirection', title: 'Toggle Split Direction', category: 'View', icon: ArrowLeftRight, keywords: 'layout side by side stacked', run: () => {
+    const s = useSettingsStore.getState()
+    s.set('splitDirection', s.splitDirection === 'horizontal' ? 'vertical' : 'horizontal')
   } },
 
   // AI
@@ -223,6 +293,8 @@ export const KEYBINDINGS: { combo: string; commandId: string }[] = [
   { combo: 'mod+,', commandId: 'settings.open' },
   { combo: 'mod+i', commandId: 'ai.explain' },
   { combo: 'mod+shift+a', commandId: 'ai.toggleAgent' },
+  { combo: 'mod+shift+i', commandId: 'editor.format' },
+  { combo: 'mod+g', commandId: 'editor.goToLine' },
 ]
 
 function eventCombo(e: KeyboardEvent): string | null {

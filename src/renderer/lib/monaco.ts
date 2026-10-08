@@ -1,6 +1,6 @@
 /**
- * Monaco setup: web workers, custom themes, AI inline completions,
- * "Fix with AI" code actions, model lifecycle and editor options.
+ * Monaco setup: web workers, custom themes (accent-aware), AI inline
+ * completions, "Fix with AI" code actions, model lifecycle and editor options.
  */
 import * as monaco from 'monaco-editor'
 import { loader } from '@monaco-editor/react'
@@ -11,7 +11,8 @@ import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker'
 import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
 import { api } from '../api'
 import { streamChat } from '../ai/providers'
-import { setSnapshot, useEditorStore } from '../store/editor'
+import { ACCENTS, EDITOR_FONT_STACKS, type AccentId, type EditorFontId } from './accents'
+import { setSnapshot, getSnapshot, useEditorStore } from '../store/editor'
 import { resolveInlineModel, useSettingsStore } from '../store/settings'
 import { fixProblems } from './aiActions'
 import { languageForPath } from './languages'
@@ -38,14 +39,26 @@ export function setupMonaco(): void {
     },
   }
 
-  defineThemes()
+  defineThemes(useSettingsStore.getState().accent)
   registerInlineCompletions()
   registerAICodeActions()
+
+  // Re-theme Monaco when the accent changes.
+  window.addEventListener('kineticut:appearance', () => {
+    defineThemes(useSettingsStore.getState().accent)
+    monaco.editor.setTheme(monacoThemeName())
+  })
 }
 
 /* --------------------------------- themes ---------------------------------- */
 
-function defineThemes(): void {
+function accentColors(accent: AccentId): { accent: string; accent2: string } {
+  return ACCENTS[accent] || ACCENTS.ocean
+}
+
+function defineThemes(accentId: AccentId): void {
+  const { accent, accent2 } = accentColors(accentId)
+
   monaco.editor.defineTheme('kinetic-dark', {
     base: 'vs-dark',
     inherit: true,
@@ -74,47 +87,47 @@ function defineThemes(): void {
       'editor.foreground': '#e6e6ef',
       'editorGutter.background': '#0d0d14',
       'editorLineNumber.foreground': '#4a4a5e',
-      'editorLineNumber.activeForeground': '#7aa2f7',
-      'editor.selectionBackground': '#28304a',
-      'editor.selectionHighlightBackground': '#1d2438',
+      'editorLineNumber.activeForeground': accent,
+      'editor.selectionBackground': `${accent}40`,
+      'editor.selectionHighlightBackground': `${accent}20`,
       'editor.lineHighlightBackground': '#14141d',
-      'editorCursor.foreground': '#7aa2f7',
+      'editorCursor.foreground': accent,
       'editorWhitespace.foreground': '#2a2a3c',
       'editorIndentGuide.background1': '#1c1c2c',
       'editorIndentGuide.activeBackground1': '#34345a',
-      'editorBracketMatch.background': '#28304a',
-      'editorBracketMatch.border': '#3d5a9e',
+      'editorBracketMatch.background': `${accent}33`,
+      'editorBracketMatch.border': `${accent}88`,
       'editorWidget.background': '#12121b',
       'editorWidget.border': '#26263a',
       'editorSuggestWidget.background': '#12121b',
       'editorSuggestWidget.border': '#26263a',
       'editorSuggestWidget.foreground': '#c8c8d8',
-      'editorSuggestWidget.selectedBackground': '#1d2438',
-      'editorSuggestWidget.highlightForeground': '#7aa2f7',
+      'editorSuggestWidget.selectedBackground': `${accent}2e`,
+      'editorSuggestWidget.highlightForeground': accent,
       'editorHoverWidget.background': '#12121b',
       'editorHoverWidget.border': '#26263a',
-      'editor.findMatchBackground': '#3b2f6b',
-      'editor.findMatchHighlightBackground': '#2a2350',
-      'scrollbarSlider.background': '#26263a80',
-      'scrollbarSlider.hoverBackground': '#34345a99',
-      'scrollbarSlider.activeBackground': '#4a4a7099',
+      'editor.findMatchBackground': `${accent2}66`,
+      'editor.findMatchHighlightBackground': `${accent2}33`,
+      'scrollbarSlider.background': `${accent}44`,
+      'scrollbarSlider.hoverBackground': `${accent}66`,
+      'scrollbarSlider.activeBackground': `${accent}88`,
       'minimap.background': '#0b0b10',
       'editorMarkerNavigationError.background': '#f7768e',
       'editorMarkerNavigationWarning.background': '#e0af68',
-      'editorMarkerNavigationInfo.background': '#7aa2f7',
+      'editorMarkerNavigationInfo.background': accent,
       'diffEditor.insertedTextBackground': '#1d3a2d',
       'diffEditor.removedTextBackground': '#3d1f28',
       'diffEditor.insertedLineBackground': '#14251d',
       'diffEditor.removedLineBackground': '#2a181f',
-      'badge.background': '#1d2438',
-      'badge.foreground': '#c8c8d8',
-      'button.background': '#1d2438',
+      'badge.background': `${accent}2e`,
+      'badge.foreground': '#e6e6ef',
+      'button.background': `${accent}2e`,
       'button.foreground': '#e6e6ef',
-      'button.hoverBackground': '#28304a',
+      'button.hoverBackground': `${accent}44`,
       'input.background': '#101018',
       'input.border': '#26263a',
       'input.foreground': '#e6e6ef',
-      'focusBorder': '#7aa2f7',
+      'focusBorder': accent,
       'panel.background': '#0d0d14',
       'panel.border': '#232336',
       'titleBar.activeBackground': '#0b0b10',
@@ -125,7 +138,7 @@ function defineThemes(): void {
       'tab.inactiveBackground': '#101018',
       'tab.border': '#232336',
       'list.hoverBackground': '#1a1a26',
-      'list.activeSelectionBackground': '#1d2438',
+      'list.activeSelectionBackground': `${accent}2e`,
       'list.inactiveSelectionBackground': '#161624',
     },
   })
@@ -155,25 +168,25 @@ function defineThemes(): void {
       'editor.foreground': '#24292f',
       'editorGutter.background': '#ffffff',
       'editorLineNumber.foreground': '#8c959f',
-      'editorLineNumber.activeForeground': '#0550ae',
-      'editor.selectionBackground': '#b6e3ff',
+      'editorLineNumber.activeForeground': accent,
+      'editor.selectionBackground': `${accent}55`,
       'editor.lineHighlightBackground': '#f6f8fa',
-      'editorCursor.foreground': '#0550ae',
+      'editorCursor.foreground': accent,
       'editorWidget.background': '#f6f8fa',
       'editorWidget.border': '#d0d7de',
       'editorSuggestWidget.background': '#ffffff',
       'editorSuggestWidget.border': '#d0d7de',
-      'editorSuggestWidget.selectedBackground': '#ddf4ff',
+      'editorSuggestWidget.selectedBackground': `${accent}33`,
       'editorHoverWidget.background': '#ffffff',
       'editorHoverWidget.border': '#d0d7de',
-      'scrollbarSlider.background': '#c9ced680',
-      'scrollbarSlider.hoverBackground': '#aab2bd99',
-      'scrollbarSlider.activeBackground': '#8c959f99',
-      'focusBorder': '#0550ae',
+      'scrollbarSlider.background': `${accent}55`,
+      'scrollbarSlider.hoverBackground': `${accent}77`,
+      'scrollbarSlider.activeBackground': `${accent}99`,
+      'focusBorder': accent,
       'input.background': '#ffffff',
       'input.border': '#d0d7de',
       'input.foreground': '#24292f',
-      'badge.background': '#ddf4ff',
+      'badge.background': `${accent}33`,
       'badge.foreground': '#24292f',
     },
   })
@@ -308,18 +321,52 @@ function registerAICodeActions(): void {
 
 /* ------------------------------ model lifecycle ----------------------------- */
 
-export async function ensureModel(path: string): Promise<monaco.editor.ITextModel | null> {
+export interface EnsureResult {
+  /** The text model (null for binary files). */
+  model: monaco.editor.ITextModel | null
+  /** True when the file is binary (no text preview). */
+  binary: boolean
+  /** True when the content was truncated to the read limit. */
+  truncated: boolean
+}
+
+/**
+ * Ensure a Monaco model exists for `path` and is filled with the file content.
+ *
+ * Race-proof: @monaco-editor/react may have already created an EMPTY model for
+ * the path when it switched to it — if so, we fill it here instead of returning
+ * the empty model (that race made files appear blank).
+ */
+export async function ensureModel(path: string): Promise<EnsureResult> {
   const uri = monaco.Uri.file(path)
   const existing = monaco.editor.getModel(uri)
-  if (existing) return existing
+  // A snapshot means this path's model was already loaded from disk — keep it
+  // (it may hold unsaved changes).
+  const alreadyLoaded = getSnapshot(path) !== undefined
+  if (existing && alreadyLoaded) {
+    return { model: existing, binary: false, truncated: false }
+  }
   try {
     const res = await api.fs.read(path)
-    if (res.binary) return null
-    const model = monaco.editor.createModel(res.content, languageForPath(path), uri)
+    if (res.binary) {
+      return { model: existing, binary: true, truncated: false }
+    }
+    if (existing) {
+      // Fill the (possibly empty) model the editor created for this path.
+      if (existing.getValue() !== res.content) {
+        existing.setValue(res.content)
+      }
+    } else {
+      monaco.editor.createModel(res.content, languageForPath(path), uri)
+    }
     setSnapshot(path, res.content)
-    return model
+    return {
+      model: monaco.editor.getModel(uri),
+      binary: false,
+      truncated: res.truncated === true,
+    }
   } catch {
-    return null
+    return { model: existing, binary: false, truncated: false }
   }
 }
 
@@ -340,6 +387,7 @@ export async function syncOpenModelsWithDisk(): Promise<void> {
       if (res.binary) continue
       if (res.content !== model.getValue()) {
         model.setValue(res.content)
+        setSnapshot(path, res.content)
       }
     } catch {
       /* file deleted — keep the buffer */
@@ -351,10 +399,13 @@ export async function syncOpenModelsWithDisk(): Promise<void> {
 
 export function editorOptions(): monaco.editor.IStandaloneEditorConstructionOptions {
   const s = useSettingsStore.getState()
+  const fontFamily =
+    EDITOR_FONT_STACKS[s.editorFontFamily as EditorFontId] || EDITOR_FONT_STACKS.jetbrains
   return {
     automaticLayout: true,
-    fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
+    fontFamily,
     fontSize: s.editorFontSize,
+    lineHeight: s.editorLineHeight,
     fontLigatures: true,
     minimap: { enabled: s.minimap, showSlider: 'mouseover', renderCharacters: false },
     wordWrap: s.wordWrap ? 'on' : 'off',

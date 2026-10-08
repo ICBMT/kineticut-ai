@@ -2,8 +2,13 @@ import { create } from 'zustand'
 import { api } from '../api'
 import { DEFAULT_BASE_URLS, probeProvider } from '../ai/providers'
 import type { ProviderConfig } from '../ai/types'
+import type { AccentId, EditorFontId } from '../lib/accents'
 
 export type Theme = 'dark' | 'light'
+export type Density = 'comfortable' | 'compact'
+export type Side = 'left' | 'right'
+export type PanelPosition = 'bottom' | 'right'
+export type SplitDirection = 'horizontal' | 'vertical'
 
 const PERSIST_KEYS = [
   'providers',
@@ -14,9 +19,18 @@ const PERSIST_KEYS = [
   'agentAutoApprove',
   'agentMaxSteps',
   'theme',
+  'accent',
+  'editorFontFamily',
   'editorFontSize',
+  'editorLineHeight',
   'wordWrap',
   'minimap',
+  'density',
+  'animations',
+  'sidebarPosition',
+  'panelPosition',
+  'splitDirection',
+  'formatOnSave',
 ] as const
 
 export type ProviderStatus = 'unknown' | 'ok' | 'error'
@@ -31,9 +45,18 @@ export interface SettingsState {
   agentAutoApprove: boolean
   agentMaxSteps: number
   theme: Theme
+  accent: AccentId
+  editorFontFamily: EditorFontId
   editorFontSize: number
+  editorLineHeight: number
   wordWrap: boolean
   minimap: boolean
+  density: Density
+  animations: boolean
+  sidebarPosition: Side
+  panelPosition: PanelPosition
+  splitDirection: SplitDirection
+  formatOnSave: boolean
   providerStatus: Record<string, ProviderStatus>
 
   load(): Promise<void>
@@ -47,8 +70,17 @@ export interface SettingsState {
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null
 
-export function applyTheme(theme: Theme): void {
-  document.documentElement.dataset.theme = theme
+const APPEARANCE_KEYS = new Set(['theme', 'accent', 'density', 'animations'])
+
+/** Apply theme/accent/density/animations to the document root (CSS variables). */
+export function applyAppearance(
+  s: Pick<SettingsState, 'theme' | 'accent' | 'density' | 'animations'>,
+): void {
+  const root = document.documentElement
+  root.dataset.theme = s.theme
+  root.dataset.accent = s.accent
+  root.dataset.density = s.density
+  root.dataset.animations = s.animations ? 'on' : 'off'
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -61,9 +93,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   agentAutoApprove: false,
   agentMaxSteps: 8,
   theme: 'dark',
+  accent: 'ocean',
+  editorFontFamily: 'jetbrains',
   editorFontSize: 13,
+  editorLineHeight: 22,
   wordWrap: false,
   minimap: true,
+  density: 'comfortable',
+  animations: true,
+  sidebarPosition: 'left',
+  panelPosition: 'bottom',
+  splitDirection: 'horizontal',
+  formatOnSave: false,
   providerStatus: {},
 
   load: async () => {
@@ -90,11 +131,20 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       agentAutoApprove: bag.agentAutoApprove === true,
       agentMaxSteps: (bag.agentMaxSteps as number) || 8,
       theme: bag.theme === 'light' ? 'light' : 'dark',
+      accent: (bag.accent as AccentId) || 'ocean',
+      editorFontFamily: (bag.editorFontFamily as EditorFontId) || 'jetbrains',
       editorFontSize: (bag.editorFontSize as number) || 13,
+      editorLineHeight: (bag.editorLineHeight as number) || 22,
       wordWrap: bag.wordWrap === true,
       minimap: bag.minimap !== false,
+      density: bag.density === 'compact' ? 'compact' : 'comfortable',
+      animations: bag.animations !== false,
+      sidebarPosition: bag.sidebarPosition === 'right' ? 'right' : 'left',
+      panelPosition: bag.panelPosition === 'right' ? 'right' : 'bottom',
+      splitDirection: bag.splitDirection === 'vertical' ? 'vertical' : 'horizontal',
+      formatOnSave: bag.formatOnSave === true,
     })
-    applyTheme(get().theme)
+    applyAppearance(get())
     // Probe providers in the background to discover models.
     for (const p of providers) void get().refreshProviderModels(p.id)
   },
@@ -152,7 +202,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   set: (key, value) => {
     set({ [key]: value } as Partial<SettingsState>)
     get().persist()
-    if (key === 'theme') applyTheme(value as Theme)
+    if (APPEARANCE_KEYS.has(key)) {
+      applyAppearance(get())
+      // Let Monaco re-theme itself for the new accent.
+      window.dispatchEvent(new CustomEvent('kineticut:appearance'))
+    }
   },
 }))
 

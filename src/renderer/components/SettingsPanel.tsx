@@ -3,9 +3,11 @@ import {
   Check,
   Cloud,
   Download,
+  FileCode,
   Globe,
   KeyRound,
   Monitor,
+  PanelLeft,
   Plus,
   RefreshCw,
   Server,
@@ -16,6 +18,7 @@ import {
 } from 'lucide-react'
 import { DEFAULT_BASE_URLS, PROVIDER_LABELS, probeProvider, pullOllamaModel } from '../ai/providers'
 import type { ProviderConfig, ProviderType } from '../ai/types'
+import { ACCENTS, ACCENT_IDS, EDITOR_FONTS, type EditorFontId } from '../lib/accents'
 import { cn } from '../lib/utils'
 import { useAppStore } from '../store/app'
 import { useSettingsStore } from '../store/settings'
@@ -223,7 +226,7 @@ function PullModel({ provider }: { provider: ProviderConfig }) {
         <div className="flex flex-col gap-1">
           <div className="h-1.5 w-full rounded-full bg-[var(--bg-hover)] overflow-hidden">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-[#6d8dff] to-[#9a7bff] transition-all"
+              className="h-full rounded-full bg-gradient-to-r from-[var(--accent)] to-[var(--accent-2)] transition-all"
               style={{
                 width: progress.total > 0 ? `${Math.min(100, (progress.completed / progress.total) * 100)}%` : '30%',
               }}
@@ -443,7 +446,63 @@ export function SettingsPanel() {
               onChange={(v) => settings.set('theme', v)}
             />
           </SettingRow>
-          <SettingRow title="Editor font size">
+          <SettingRow title="Accent" desc="UI and editor accent color">
+            <div className="flex gap-1.5">
+              {ACCENT_IDS.map((id) => (
+                <button
+                  key={id}
+                  title={ACCENTS[id].label}
+                  onClick={() => settings.set('accent', id)}
+                  className={cn(
+                    'w-6 h-6 rounded-full border-2 transition-transform',
+                    settings.accent === id
+                      ? 'border-[var(--text)] scale-110'
+                      : 'border-transparent opacity-70 hover:opacity-100',
+                  )}
+                  style={{
+                    background: `linear-gradient(135deg, ${ACCENTS[id].accent}, ${ACCENTS[id].accent2})`,
+                  }}
+                />
+              ))}
+            </div>
+          </SettingRow>
+          <SettingRow title="UI density">
+            <Segmented
+              value={settings.density}
+              options={[
+                { value: 'comfortable', label: 'Comfortable' },
+                { value: 'compact', label: 'Compact' },
+              ]}
+              onChange={(v) => settings.set('density', v)}
+            />
+          </SettingRow>
+          <SettingRow title="Animations" desc="Transitions and motion effects">
+            <Toggle
+              on={settings.animations}
+              onChange={(v) => settings.set('animations', v)}
+              label="Animations"
+            />
+          </SettingRow>
+        </div>
+
+        <SectionTitle icon={FileCode} title="Editor" />
+        <div className="card">
+          <SettingRow title="Font family">
+            <select
+              className="field-input !w-44 !py-1 !text-xs"
+              value={settings.editorFontFamily}
+              onChange={(e) =>
+                settings.set('editorFontFamily', e.target.value as EditorFontId)
+              }
+            >
+              {EDITOR_FONTS.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </SettingRow>
+          <SettingRow title="Font size">
             <div className="flex items-center gap-1">
               <button
                 className="btn !py-1 !px-2 text-xs"
@@ -455,6 +514,27 @@ export function SettingsPanel() {
               <button
                 className="btn !py-1 !px-2 text-xs"
                 onClick={() => settings.set('editorFontSize', Math.min(28, settings.editorFontSize + 1))}
+              >
+                +
+              </button>
+            </div>
+          </SettingRow>
+          <SettingRow title="Line height">
+            <div className="flex items-center gap-1">
+              <button
+                className="btn !py-1 !px-2 text-xs"
+                onClick={() =>
+                  settings.set('editorLineHeight', Math.max(14, settings.editorLineHeight - 1))
+                }
+              >
+                −
+              </button>
+              <span className="w-8 text-center text-xs font-mono">{settings.editorLineHeight}</span>
+              <button
+                className="btn !py-1 !px-2 text-xs"
+                onClick={() =>
+                  settings.set('editorLineHeight', Math.min(40, settings.editorLineHeight + 1))
+                }
               >
                 +
               </button>
@@ -472,6 +552,47 @@ export function SettingsPanel() {
               on={settings.minimap}
               onChange={(v) => settings.set('minimap', v)}
               label="Minimap"
+            />
+          </SettingRow>
+          <SettingRow title="Format on save" desc="Run the language formatter when saving">
+            <Toggle
+              on={settings.formatOnSave}
+              onChange={(v) => settings.set('formatOnSave', v)}
+              label="Format on save"
+            />
+          </SettingRow>
+        </div>
+
+        <SectionTitle icon={PanelLeft} title="Layout" />
+        <div className="card">
+          <SettingRow title="Sidebar position">
+            <Segmented
+              value={settings.sidebarPosition}
+              options={[
+                { value: 'left', label: 'Left' },
+                { value: 'right', label: 'Right' },
+              ]}
+              onChange={(v) => settings.set('sidebarPosition', v)}
+            />
+          </SettingRow>
+          <SettingRow title="Panel position" desc="Where the terminal panel lives">
+            <Segmented
+              value={settings.panelPosition}
+              options={[
+                { value: 'bottom', label: 'Bottom' },
+                { value: 'right', label: 'Right' },
+              ]}
+              onChange={(v) => settings.set('panelPosition', v)}
+            />
+          </SettingRow>
+          <SettingRow title="Split direction" desc="How split editor groups are arranged">
+            <Segmented
+              value={settings.splitDirection}
+              options={[
+                { value: 'horizontal', label: 'Side by side' },
+                { value: 'vertical', label: 'Stacked' },
+              ]}
+              onChange={(v) => settings.set('splitDirection', v)}
             />
           </SettingRow>
         </div>

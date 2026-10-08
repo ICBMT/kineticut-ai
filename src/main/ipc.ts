@@ -49,6 +49,29 @@ function looksBinary(buf: Buffer): boolean {
   return false
 }
 
+/** Decode a file buffer as text, honoring UTF-8/UTF-16 BOMs; flags true binaries. */
+function decodeTextBuffer(buf: Buffer): { content: string; binary: boolean } {
+  // UTF-16 LE BOM
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) {
+    return { content: buf.subarray(2).toString('utf16le'), binary: false }
+  }
+  // UTF-16 BE BOM (swap to LE)
+  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+    const swapped = Buffer.allocUnsafe(Math.floor((buf.length - 2) / 2) * 2)
+    for (let i = 2; i + 1 < buf.length; i += 2) {
+      swapped[i - 2] = buf[i + 1]
+      swapped[i - 1] = buf[i]
+    }
+    return { content: swapped.toString('utf16le'), binary: false }
+  }
+  // UTF-8 BOM
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
+    return { content: buf.subarray(3).toString('utf8'), binary: false }
+  }
+  if (looksBinary(buf)) return { content: '', binary: true }
+  return { content: buf.toString('utf8'), binary: false }
+}
+
 async function toEntry(path: string, type: 'file' | 'directory'): Promise<FileEntry> {
   let size = 0
   let mtime = 0
@@ -531,15 +554,15 @@ export function registerIpc(getWin: () => BrowserWindow | null) {
 
   ipcMain.handle('fs:read', async (_e, path: string) => {
     const buf = await fs.readFile(path)
-    const binary = looksBinary(buf)
-    const size = buf.length
     const st = await fs.stat(path)
+    const { content, binary } = decodeTextBuffer(buf)
     return {
       path,
-      content: binary ? '' : buf.subarray(0, MAX_READ_BYTES).toString('utf8'),
+      content: binary ? '' : content.slice(0, MAX_READ_BYTES),
       binary,
-      size,
+      size: buf.length,
       mtime: st.mtimeMs,
+      truncated: !binary && content.length > MAX_READ_BYTES,
     }
   })
 

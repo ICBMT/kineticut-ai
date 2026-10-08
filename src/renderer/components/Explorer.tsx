@@ -130,7 +130,7 @@ function InlineInput({
 export function Explorer() {
   const folder = useAppStore((s) => s.folder)
   const recentFolders = useAppStore((s) => s.recentFolders)
-  const activePath = useEditorStore((s) => s.activePath)
+  const activePath = useEditorStore((s) => s.activeTab()?.path ?? null)
   const openTab = useEditorStore((s) => s.openTab)
 
   const [children, setChildren] = useState<Record<string, FileEntry[]>>({})
@@ -235,8 +235,8 @@ export function Explorer() {
       try {
         await api.fs.rename(entry.path, target)
         // Keep open tabs in sync.
-        const { tabs, renameTab, closeTab } = useEditorStore.getState()
-        for (const tab of tabs) {
+        const { allTabs, renameTab } = useEditorStore.getState()
+        for (const tab of allTabs()) {
           if (tab.path === entry.path) renameTab(entry.path, target)
           else if (tab.path.startsWith(entry.path + '/')) {
             renameTab(tab.path, target + tab.path.slice(entry.path.length))
@@ -277,8 +277,8 @@ export function Explorer() {
       if (!ok) return
       try {
         await api.fs.remove(entry.path)
-        const { tabs, closeTab } = useEditorStore.getState()
-        for (const tab of [...tabs]) {
+        const { allTabs, closeTab } = useEditorStore.getState()
+        for (const tab of [...allTabs()]) {
           if (tab.path === entry.path || tab.path.startsWith(entry.path + '/')) closeTab(tab.path)
         }
         const parent = entry.path.split(/[/\\]/).slice(0, -1).join('/')
@@ -296,11 +296,27 @@ export function Explorer() {
     [loadChildren],
   )
 
+  const openToSide = useCallback((path: string) => {
+    const store = useEditorStore.getState()
+    let targetId = store.groups.find((g) => g.id !== store.activeGroupId)?.id
+    if (!targetId) targetId = store.splitGroup()
+    if (targetId) store.openTab(path, targetId)
+  }, [])
+
   const menuItems = useMemo((): MenuItem[] => {
     if (!menu) return []
     const entry = menu.entry
     const isDir = entry.type === 'directory'
     return [
+      ...(isDir
+        ? []
+        : [
+            {
+              label: 'Open to the Side',
+              onClick: () => openToSide(entry.path),
+            } as MenuItem,
+            { type: 'separator' as const },
+          ]),
       {
         icon: FilePlus2,
         label: 'New File…',

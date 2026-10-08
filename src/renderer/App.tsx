@@ -3,8 +3,10 @@ import { Zap } from 'lucide-react'
 import { api } from './api'
 import { installKeybindings } from './commands'
 import { Logo } from './components/Logo'
+import { refreshProjectBrief } from './lib/projectBrief'
 import { syncOpenModelsWithDisk } from './lib/monaco'
-import { applyTheme, useSettingsStore } from './store/settings'
+import { cn } from './lib/utils'
+import { applyAppearance, useSettingsStore } from './store/settings'
 import { useAppStore } from './store/app'
 import { ActivityBar } from './components/ActivityBar'
 import { CommandPalette } from './components/CommandPalette'
@@ -21,7 +23,7 @@ import { Toasts } from './components/Toasts'
 async function boot() {
   const settings = useSettingsStore.getState()
   await settings.load()
-  applyTheme(useSettingsStore.getState().theme)
+  applyAppearance(useSettingsStore.getState())
   try {
     const info = await api.system.info()
     useAppStore.getState().setSystem(info)
@@ -49,6 +51,12 @@ export function App() {
   const sidebarVisible = useAppStore((s) => s.sidebarVisible)
   const folder = useAppStore((s) => s.folder)
   const theme = useSettingsStore((s) => s.theme)
+  const sidebarPosition = useSettingsStore((s) => s.sidebarPosition)
+  const panelPosition = useSettingsStore((s) => s.panelPosition)
+  const settingsLoaded = useSettingsStore((s) => s.loaded)
+  const hasModel = useSettingsStore((s) =>
+    s.providers.some((p) => p.models.length > 0),
+  )
 
   useEffect(() => {
     installKeybindings()
@@ -97,6 +105,13 @@ export function App() {
     }
   }, [folder])
 
+  // AI project understanding: brief the model about the open folder
+  // (re-runs when a model becomes available).
+  useEffect(() => {
+    if (!folder || !settingsLoaded) return
+    void refreshProjectBrief()
+  }, [folder, settingsLoaded, hasModel])
+
   if (!ready) {
     return (
       <div className="splash">
@@ -117,11 +132,12 @@ export function App() {
         <TitleBar />
         <div className="app-body">
           <ActivityBar />
-          {sidebarVisible && <SideBar />}
-          <div className="app-main">
+          {sidebarVisible && sidebarPosition === 'left' && <SideBar />}
+          <div className={cn('app-main', panelPosition === 'right' && 'app-main-row')}>
             <EditorArea />
             <TerminalPanel />
           </div>
+          {sidebarVisible && sidebarPosition === 'right' && <SideBar />}
         </div>
         <StatusBar />
         <CommandPalette />

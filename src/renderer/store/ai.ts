@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 import { runAgent, type AgentToolEvent } from '../ai/agent'
 import { streamChat } from '../ai/providers'
 import type { AIMessage, AIStreamEvent, AIToolCall } from '../ai/types'
+import { currentBriefText } from '../lib/projectBrief'
 import { resolveChatModel, useSettingsStore } from './settings'
 
 export interface ToolEventEntry {
@@ -161,9 +162,19 @@ export const useAIStore = create<AIState>()(
         set({ streaming: true, abort: controller })
 
         const current = get().activeSession()
-        const history: AIMessage[] = (current?.messages || [])
+        const brief = currentBriefText()
+        const baseHistory: AIMessage[] = (current?.messages || [])
           .filter((m) => m.id !== assistantMsg.id && !m.pending)
           .map(toAIMessage)
+        const history: AIMessage[] = brief
+          ? [
+              {
+                role: 'system',
+                content: `Project context (the user's open workspace):\n${brief}`,
+              },
+              ...baseHistory,
+            ]
+          : baseHistory
 
         const patch = (p: Partial<ChatMessage>) =>
           set((s) => ({ sessions: patchMessage(s.sessions, sessionId, assistantMsg.id, p) }))

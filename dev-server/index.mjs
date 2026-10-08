@@ -116,6 +116,26 @@ function looksBinary(buf) {
   return false
 }
 
+/** Decode a file buffer as text, honoring UTF-8/UTF-16 BOMs; flags true binaries. */
+function decodeTextBuffer(buf) {
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) {
+    return { content: buf.subarray(2).toString('utf16le'), binary: false }
+  }
+  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+    const swapped = Buffer.allocUnsafe(Math.floor((buf.length - 2) / 2) * 2)
+    for (let i = 2; i + 1 < buf.length; i += 2) {
+      swapped[i - 2] = buf[i + 1]
+      swapped[i - 1] = buf[i]
+    }
+    return { content: swapped.toString('utf16le'), binary: false }
+  }
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
+    return { content: buf.subarray(3).toString('utf8'), binary: false }
+  }
+  if (looksBinary(buf)) return { content: '', binary: true }
+  return { content: buf.toString('utf8'), binary: false }
+}
+
 function sortEntries(entries) {
   return entries.sort((a, b) => {
     if (a.type !== b.type) return a.type === 'directory' ? -1 : 1
@@ -396,14 +416,15 @@ const server = http.createServer(async (req, res) => {
     if (path === '/api/fs/read' && method === 'POST') {
       const { path: target } = await readJson(req)
       const buf = await fs.readFile(target)
-      const binary = looksBinary(buf)
       const st = await fs.stat(target)
+      const { content, binary } = decodeTextBuffer(buf)
       return sendJson(res, 200, {
         path: target,
-        content: binary ? '' : buf.subarray(0, MAX_READ_BYTES).toString('utf8'),
+        content: binary ? '' : content.slice(0, MAX_READ_BYTES),
         binary,
         size: buf.length,
         mtime: st.mtimeMs,
+        truncated: !binary && content.length > MAX_READ_BYTES,
       })
     }
 

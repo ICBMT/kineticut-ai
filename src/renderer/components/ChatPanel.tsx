@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Bot,
+  BrainCircuit,
   Bug,
   Check,
   ChevronDown,
@@ -11,6 +12,7 @@ import {
   MessageSquare,
   MessageSquarePlus,
   Paperclip,
+  RefreshCw,
   Send,
   Sparkles,
   Square,
@@ -20,6 +22,7 @@ import {
   X,
 } from 'lucide-react'
 import { renderMarkdown } from '../lib/markdown'
+import { refreshProjectBrief } from '../lib/projectBrief'
 import { cn } from '../lib/utils'
 import { editorRef } from '../lib/editorRef'
 import { attachSelectionToChat } from '../lib/aiActions'
@@ -169,6 +172,69 @@ function MessageView({ message }: { message: ChatMessage }) {
   )
 }
 
+/* ------------------------------ project brief ------------------------------- */
+
+function ProjectBriefCard() {
+  const brief = useAppStore((s) => s.projectBrief)
+  const loading = useAppStore((s) => s.briefLoading)
+  const folder = useAppStore((s) => s.folder)
+  const [expanded, setExpanded] = useState(false)
+
+  if (!folder) return null
+
+  return (
+    <div className="brief-card">
+      <div className="flex items-center gap-2">
+        <BrainCircuit size={14} className="text-[var(--accent)] shrink-0" />
+        <span className="text-xs font-semibold">Project brief</span>
+        {brief && (
+          <span className="text-[10px] text-[var(--text-faint)]">
+            {new Date(brief.at).toLocaleTimeString()}
+          </span>
+        )}
+        <div className="flex-1" />
+        {loading && <Spinner size={11} />}
+        <IconButton
+          icon={RefreshCw}
+          size={12}
+          tooltip="Regenerate project brief"
+          onClick={() => void refreshProjectBrief()}
+        />
+      </div>
+      {brief ? (
+        <>
+          <div
+            className={cn(
+              'prose-chat text-[11.5px] mt-1.5',
+              !expanded && 'max-h-24 overflow-hidden',
+            )}
+          >
+            <Markdown text={brief.text} />
+          </div>
+          <button
+            className="text-[10px] text-[var(--accent)] mt-1"
+            onClick={() => setExpanded((v) => !v)}
+          >
+            {expanded ? 'Show less' : 'Show more'}
+          </button>
+        </>
+      ) : (
+        <div className="text-[11px] text-[var(--text-faint)] mt-1.5">
+          {loading ? 'Analyzing the workspace…' : 'No brief yet.'}
+          {!loading && (
+            <button
+              className="text-[var(--accent)] ml-1"
+              onClick={() => void refreshProjectBrief()}
+            >
+              Generate
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ------------------------------ suggestions -------------------------------- */
 
 const SUGGESTIONS = [
@@ -287,6 +353,8 @@ export function ChatPanel() {
           onChange={(m) => session && ai.setMode(session.id, m)}
         />
       </div>
+
+      <ProjectBriefCard />
 
       <div ref={scrollRef} className="sidebar-scroll">
         {!session || session.messages.length === 0 ? (

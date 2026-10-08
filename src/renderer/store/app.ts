@@ -50,6 +50,12 @@ export interface EditorSelectionInfo {
   endColumn: number
 }
 
+export interface ProjectBrief {
+  text: string
+  at: number
+  folder: string
+}
+
 interface AppState {
   ready: boolean
   system: SystemInfo | null
@@ -62,9 +68,13 @@ interface AppState {
   sidebarWidth: number
   panelOpen: boolean
   panelHeight: number
+  panelWidth: number
 
   gitStatus: GitStatus | null
   gitLoading: boolean
+
+  projectBrief: ProjectBrief | null
+  briefLoading: boolean
 
   problems: { errors: number; warnings: number }
   selectionInfo: { line: number; column: number; selected: number } | null
@@ -89,8 +99,12 @@ interface AppState {
   setPanelOpen(v: boolean): void
   togglePanel(): void
   setPanelHeight(h: number): void
+  setPanelWidth(w: number): void
 
   refreshGit(): Promise<void>
+
+  setProjectBrief(b: ProjectBrief | null): void
+  setBriefLoading(v: boolean): void
 
   setProblems(p: { errors: number; warnings: number }): void
   setSelectionInfo(s: { line: number; column: number; selected: number } | null): void
@@ -125,8 +139,11 @@ export const useAppStore = create<AppState>()(
       sidebarWidth: 260,
       panelOpen: false,
       panelHeight: 260,
+      panelWidth: 460,
       gitStatus: null,
       gitLoading: false,
+      projectBrief: null,
+      briefLoading: false,
       problems: { errors: 0, warnings: 0 },
       selectionInfo: null,
       editorSelection: null,
@@ -146,7 +163,14 @@ export const useAppStore = create<AppState>()(
           const recentFolders = path
             ? [path, ...s.recentFolders.filter((p) => p !== path)].slice(0, 10)
             : s.recentFolders
-          return { folder: path, recentFolders, fileIndex: null, gitStatus: null }
+          return {
+            folder: path,
+            recentFolders,
+            fileIndex: null,
+            gitStatus: null,
+            projectBrief: null,
+            briefLoading: false,
+          }
         })
         if (path) void get().refreshGit()
       },
@@ -159,6 +183,7 @@ export const useAppStore = create<AppState>()(
       setPanelOpen: (v) => set({ panelOpen: v }),
       togglePanel: () => set((s) => ({ panelOpen: !s.panelOpen })),
       setPanelHeight: (h) => set({ panelHeight: Math.min(700, Math.max(120, h)) }),
+      setPanelWidth: (w) => set({ panelWidth: Math.min(900, Math.max(280, w)) }),
 
       refreshGit: async () => {
         const folder = get().folder
@@ -174,6 +199,9 @@ export const useAppStore = create<AppState>()(
           set({ gitStatus: null, gitLoading: false })
         }
       },
+
+      setProjectBrief: (b) => set({ projectBrief: b }),
+      setBriefLoading: (v) => set({ briefLoading: v }),
 
       setProblems: (p) => set({ problems: p }),
       setSelectionInfo: (s) => set({ selectionInfo: s }),
@@ -197,7 +225,7 @@ export const useAppStore = create<AppState>()(
       setQuickOpenOpen: (v) => set({ quickOpenOpen: v }),
     }),
     {
-      name: 'kineticut.app.v1',
+      name: 'kineticut.app.v2',
       partialize: (s) => ({
         folder: s.folder,
         recentFolders: s.recentFolders,
@@ -207,7 +235,9 @@ export const useAppStore = create<AppState>()(
         sidebarVisible: s.sidebarVisible,
         panelOpen: s.panelOpen,
         panelHeight: s.panelHeight,
+        panelWidth: s.panelWidth,
       }),
+      version: 2,
     },
   ),
 )

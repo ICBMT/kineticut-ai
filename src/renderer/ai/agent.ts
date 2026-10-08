@@ -111,12 +111,17 @@ export interface AgentRunArgs {
   history: AIMessage[]
   maxSteps?: number
   signal?: AbortSignal
+  /** Project brief about the open workspace, injected into the system prompt. */
+  contextBrief?: string | null
   onEvent: (evt: AIStreamEvent | AgentToolEvent) => void
 }
 
 export async function runAgent(args: AgentRunArgs): Promise<void> {
-  const { provider, model, history, maxSteps = 8, signal, onEvent } = args
-  const messages: AIMessage[] = [{ role: 'system', content: AGENT_SYSTEM_PROMPT }, ...history]
+  const { provider, model, history, maxSteps = 8, signal, contextBrief, onEvent } = args
+  const systemPrompt = contextBrief
+    ? `${AGENT_SYSTEM_PROMPT}\n\nProject context (the user's open workspace):\n${contextBrief}`
+    : AGENT_SYSTEM_PROMPT
+  const messages: AIMessage[] = [{ role: 'system', content: systemPrompt }, ...history]
 
   for (let step = 0; step < maxSteps; step++) {
     if (signal?.aborted) return

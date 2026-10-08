@@ -23,6 +23,8 @@
     "mock:ollama": "node dev-server/mock-ollama.mjs"
   },
   "dependencies": {
+    "@fontsource/cascadia-code": "^5.1.0",
+    "@fontsource/fira-code": "^5.1.0",
     "@fontsource/inter": "^5.1.0",
     "@fontsource/jetbrains-mono": "^5.1.0",
     "@monaco-editor/react": "^4.7.0",

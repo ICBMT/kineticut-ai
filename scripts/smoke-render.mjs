@@ -5,7 +5,12 @@
  * Loads the real renderer entry (src/renderer/main.tsx) through Vite's SSR
  * module runner inside a jsdom window, with relative fetches pointed at the
  * dev API server — so the full boot path runs (settings → providers → mock
- * Ollama → folder open → file tree → git status) and React renders the shell.
+ * Ollama → folder open → file tree → git status → AI project brief) and React
+ * renders the shell.
+ *
+ * Also regression-tests the "files appear empty" bug: the editor library can
+ * create an EMPTY Monaco model before ensureModel runs; ensureModel must fill
+ * it with the file content.
  *
  * Prerequisites: `npm run dev:web` must be running (API on :4890, mock
  * Ollama on :11434).
@@ -16,6 +21,7 @@ import { createServer } from 'vite'
 import { JSDOM, VirtualConsole } from 'jsdom'
 
 const API = 'http://127.0.0.1:4890'
+const TEST_FILE = '/home/user/kineticut-ai/package.json'
 
 /* ------------------------------ jsdom globals ------------------------------ */
 
@@ -23,7 +29,8 @@ const virtualConsole = new VirtualConsole()
 const jsdomErrors = []
 virtualConsole.on('jsdomError', (e) => {
   const msg = String(e?.message || e)
-  if (/css|Could not load/i.test(msg)) return
+  // Known jsdom limitations, not app errors.
+  if (/css|Could not load|Not implemented: HTMLCanvasElement/i.test(msg)) return
   jsdomErrors.push(msg.slice(0, 300))
 })
 virtualConsole.on('error', (...args) => {
@@ -128,11 +135,18 @@ for (const [name, stub] of [
 // Relative fetches (the HTTP API transport) go to the dev server.
 const realFetch = g.fetch.bind(g)
 g.fetch = (input, init) => {
-  const url =
-    typeof input === 'string' && input.startsWith('/') ? API + input : input
+  const url = typeof input === 'string' && input.startsWith('/') ? API + input : input
   return realFetch(url, init)
 }
 dom.window.fetch = g.fetch
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+// Late module requests can race server.close() during teardown — ignore those.
+process.on('unhandledRejection', (err) => {
+  if (err && String(err.message || err).includes('transport was disconnected')) return
+  console.error('unhandled rejection:', err)
+})
 
 /* ---------------------------------- run ------------------------------------ */
 
@@ -155,26 +169,35 @@ async function main() {
       // Bundle browser-only packages through Vite (monaco-editor, xterm and
       // the font CSS have no Node entry point to externalize to). React and
       // friends stay external so Node's CJS interop handles them.
-      noExternal: [
-        /^monaco-editor/,
-        /^@monaco-editor/,
-        /^@xterm/,
-        /^xterm/,
-        /^@fontsource/,
-      ],
+      noExternal: [/^monaco-editor/, /^@monaco-editor/, /^@xterm/, /^xterm/, /^@fontsource/],
     },
   })
 
+  let loadError = null
   try {
     await server.ssrLoadModule('/main.tsx')
   } catch (err) {
-    console.error('✗ Failed to load the app:')
-    console.error(err)
-    process.exit(1)
+    loadError = err
   }
 
-  // Let boot + React settle.
-  await new Promise((r) => setTimeout(r, 3000))
+  const appStoreMod = await server.ssrLoadModule('/store/app.ts')
+  const editorStoreMod = await server.ssrLoadModule('/store/editor.ts')
+  const monacoLib = await server.ssrLoadModule('/lib/monaco.ts')
+  const { useAppStore } = appStoreMod
+  const { useEditorStore } = editorStoreMod
+
+  // Wait for boot (settings + system + folder restore).
+  for (let i = 0; i < 40 && !useAppStore.getState().ready; i++) await sleep(250)
+  // Let React settle and the initial render land.
+  await sleep(1500)
+
+  // Wait for the AI project brief (generated in the background).
+  let brief = null
+  for (let i = 0; i < 40; i++) {
+    brief = useAppStore.getState().projectBrief
+    if (brief?.text) break
+    await sleep(250)
+  }
 
   const text = dom.window.document.body.textContent || ''
   const html = dom.window.document.body.innerHTML || ''
@@ -184,22 +207,76 @@ async function main() {
   const realErrors = jsdomErrors.filter((e) => !/Not implemented: HTMLCanvasElement/i.test(e))
 
   const checks = [
+    ['app module loaded without errors', !loadError],
     ['title bar renders (Kineticut AI)', /Kineticut\s*AI/.test(text)],
-    [
-      'activity bar renders (5 items)',
-      doc.querySelectorAll('.activity-item').length >= 5,
-    ],
+    ['activity bar renders (5 items)', doc.querySelectorAll('.activity-item').length >= 5],
     ['welcome screen renders (Open Folder)', /Open Folder/.test(text)],
     ['explorer file tree renders (fs.list via API)', doc.querySelectorAll('.tree-row').length > 5],
     ['status bar shows a model from mock Ollama', /kinetic-coder:7b/.test(text)],
     ['settings loaded (theme applied)', doc.documentElement.dataset.theme === 'dark'],
-    ['no runtime errors', realErrors.length === 0],
+    ['AI generated a project brief for the open folder', !!brief && brief.text.length > 20],
   ]
+
+  // Regression: the editor lib can create an EMPTY model before ensureModel
+  // runs — ensureModel must fill it (this was the "files appear empty" bug).
+  let emptyModelFilled = false
+  try {
+    const monaco = await server.ssrLoadModule('monaco-editor')
+    const apiMod = await server.ssrLoadModule('/api/index.ts')
+    const uri = monaco.Uri.file(TEST_FILE)
+    monaco.editor.getModels().forEach((m) => m.dispose())
+    monaco.editor.createModel('', 'json', uri) // simulate the lib's empty model
+    const res = await monacoLib.ensureModel(TEST_FILE)
+    emptyModelFilled = !!res.model && res.model.getValue().includes('"kineticut-ai"')
+    if (!emptyModelFilled) {
+      const direct = await apiMod.api.fs.read(TEST_FILE).catch((e) => ({ error: String(e) }))
+      console.log(
+        '  debug:',
+        JSON.stringify({
+          hasModel: !!res.model,
+          binary: res.binary,
+          len: res.model?.getValue().length,
+          snapshotBefore: editorStoreMod.getSnapshot(TEST_FILE)?.length ?? null,
+          directRead: direct.error
+            ? { error: direct.error.slice(0, 120) }
+            : { len: direct.content?.length, binary: direct.binary },
+        }),
+      )
+    }
+    res.model?.dispose()
+  } catch (err) {
+    console.log('  (empty-model regression check skipped:', String(err).slice(0, 200), ')')
+  }
+  checks.push(['ensureModel fills a pre-created empty model (empty-file regression)', emptyModelFilled])
+
+  // Split-editor groups: the store supports multiple groups with tabs.
+  // (Store-level only — mounting a real Monaco editor needs canvas APIs that
+  // jsdom does not implement; the editor itself is exercised in real browsers.)
+  let groupsWork = false
+  try {
+    const store = useEditorStore.getState()
+    const before = store.groups.length
+    const newId = store.splitGroup()
+    store.openTab(TEST_FILE, newId)
+    const after = useEditorStore.getState()
+    groupsWork =
+      after.groups.length === before + 1 &&
+      after.groups.find((g) => g.id === newId)?.tabs.some((t) => t.path === TEST_FILE) === true
+  } catch {
+    /* ignore */
+  }
+  checks.push(['split editor groups work (store)', groupsWork])
+
+  checks.push(['no runtime errors', realErrors.length === 0])
 
   let failed = 0
   for (const [label, ok] of checks) {
     console.log(`${ok ? '✓' : '✗'} ${label}`)
     if (!ok) failed++
+  }
+  if (loadError) {
+    console.log('\nload error:')
+    console.error(loadError)
   }
   if (realErrors.length > 0) {
     console.log('\ncaptured errors:')

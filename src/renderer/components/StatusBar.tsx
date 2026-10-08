@@ -74,6 +74,7 @@ export function StatusBar() {
             {sel.selected > 0 ? ` (${sel.selected} selected)` : ''}
           </span>
         )}
+        <span className="sb-item">Spaces: 2</span>
         <span className="sb-item">UTF-8</span>
       </div>
     </div>

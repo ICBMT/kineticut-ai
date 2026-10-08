@@ -96,7 +96,7 @@ function ShortcutTable() {
 export function TitleBar() {
   const system = useAppStore((s) => s.system)
   const folder = useAppStore((s) => s.folder)
-  const activeTab = useEditorStore((s) => s.tabs.find((t) => t.path === s.activePath))
+  const activeTab = useEditorStore((s) => s.activeTab())
   const theme = useSettingsStore((s) => s.theme)
   const [aboutOpen, setAboutOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)

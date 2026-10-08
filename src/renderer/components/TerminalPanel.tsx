@@ -5,6 +5,7 @@ import { Terminal } from '@xterm/xterm'
 import { api } from '../api'
 import { cn } from '../lib/utils'
 import { useAppStore } from '../store/app'
+import { useSettingsStore } from '../store/settings'
 import { useTerminalStore } from '../store/terminal'
 import { IconButton } from './ui'
 
@@ -122,9 +123,13 @@ function XTerm({ id, active }: { id: string; active: boolean }) {
 export function TerminalPanel() {
   const panelOpen = useAppStore((s) => s.panelOpen)
   const panelHeight = useAppStore((s) => s.panelHeight)
+  const panelWidth = useAppStore((s) => s.panelWidth)
+  const panelPosition = useSettingsStore((s) => s.panelPosition)
   const folder = useAppStore((s) => s.folder)
   const terminals = useTerminalStore((s) => s.terminals)
   const activeId = useTerminalStore((s) => s.activeId)
+
+  const isRight = panelPosition === 'right'
 
   if (!panelOpen) return null
 
@@ -144,21 +149,41 @@ export function TerminalPanel() {
 
   const startResize = (e: React.MouseEvent) => {
     e.preventDefault()
-    const startY = e.clientY
-    const startH = panelHeight
-    const onMove = (ev: MouseEvent) =>
-      useAppStore.getState().setPanelHeight(startH - (ev.clientY - startY))
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
+    if (isRight) {
+      const startX = e.clientX
+      const startW = panelWidth
+      const onMove = (ev: MouseEvent) =>
+        useAppStore.getState().setPanelWidth(startW - (ev.clientX - startX))
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove)
+        window.removeEventListener('mouseup', onUp)
+      }
+      window.addEventListener('mousemove', onMove)
+      window.addEventListener('mouseup', onUp)
+    } else {
+      const startY = e.clientY
+      const startH = panelHeight
+      const onMove = (ev: MouseEvent) =>
+        useAppStore.getState().setPanelHeight(startH - (ev.clientY - startY))
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove)
+        window.removeEventListener('mouseup', onUp)
+      }
+      window.addEventListener('mousemove', onMove)
+      window.addEventListener('mouseup', onUp)
     }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
   }
 
   return (
-    <div className="terminal-panel" style={{ height: panelHeight }}>
-      <div className="panel-resizer" onMouseDown={startResize} title="Drag to resize" />
+    <div
+      className={cn('terminal-panel', isRight && 'terminal-panel-right')}
+      style={isRight ? { width: panelWidth } : { height: panelHeight }}
+    >
+      <div
+        className={cn('panel-resizer', isRight && 'panel-resizer-h')}
+        onMouseDown={startResize}
+        title="Drag to resize"
+      />
       <div className="terminal-tabs">
         {terminals.map((t) => (
           <button
