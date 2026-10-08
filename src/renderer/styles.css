@@ -679,6 +679,25 @@ button {
 .sb-item.clickable {
   cursor: pointer;
   border-radius: 4px;
+  /* <button> reset so it looks like the span it replaced */
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+}
+.sb-item.clickable:focus-visible,
+.activity-item:focus-visible,
+.icon-btn:focus-visible,
+.win-btn:focus-visible,
+.tree-row[role='button']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Clickable tree rows and the file name inside Source Control rows */
+.fname[role='button']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 3px;
 }
 .sb-item.clickable:hover {
   background: var(--bg-hover);

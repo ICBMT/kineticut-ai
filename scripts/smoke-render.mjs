@@ -218,6 +218,22 @@ async function main() {
     ['status bar shows a model from mock Ollama', /kinetic-coder:7b/.test(text)],
     ['settings loaded (theme applied)', doc.documentElement.dataset.theme === 'dark'],
     ['on-demand AI project brief generated', !!brief && brief.text.length > 20],
+    [
+      'accessibility: activity bar buttons have names and toggle state',
+      [...doc.querySelectorAll('.activity-item')].every(
+        (b) => b.getAttribute('aria-label') && b.hasAttribute('aria-pressed') === (b.getAttribute('aria-pressed') !== null),
+      ) && doc.querySelectorAll('.activity-item[aria-pressed]').length >= 4,
+    ],
+    [
+      'accessibility: status bar model chip is a keyboard-reachable button',
+      [...doc.querySelectorAll('.statusbar button')].some((b) => /kinetic-coder/.test(b.getAttribute('aria-label') || '')),
+    ],
+    [
+      'accessibility: every rendered button has an accessible name',
+      [...doc.querySelectorAll('button')].filter(
+        (b) => !(b.textContent || '').trim() && !b.getAttribute('aria-label') && !b.getAttribute('title'),
+      ).length === 0,
+    ],
   ]
 
   // The main-process project index backs the brief.

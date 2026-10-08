@@ -45,15 +45,17 @@ export function StatusBar() {
       </div>
       <div className="sb-group">
         {streaming && (
-          <span className="sb-item" title="What the AI is doing right now">
+          <span className="sb-item" title="What the AI is doing right now" role="status" aria-live="polite">
             <Spinner size={11} />
             {liveLabel ?? 'Thinking…'}
           </span>
         )}
         {chat.model && (
-          <span
+          <button
+            type="button"
             className="sb-item clickable"
             title="Active AI model — click to open chat"
+            aria-label={`AI model ${chat.model}, open chat`}
             onClick={() => useAppStore.getState().setChatVisible(true)}
           >
             <span
@@ -68,7 +70,7 @@ export function StatusBar() {
               }}
             />
             {chat.model}
-          </span>
+          </button>
         )}
         {settings.autoSave !== 'off' && (
           <span

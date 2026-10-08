@@ -44,13 +44,18 @@ function WindowControls() {
   }, [])
   return (
     <div className="win-controls no-drag">
-      <button className="win-btn" onClick={() => api.win.minimize()} title="Minimize">
+      <button className="win-btn" onClick={() => api.win.minimize()} title="Minimize" aria-label="Minimize window">
         <Minus size={14} />
       </button>
-      <button className="win-btn" onClick={() => api.win.maximize()} title="Maximize">
+      <button
+        className="win-btn"
+        onClick={() => api.win.maximize()}
+        title={maximized ? 'Restore' : 'Maximize'}
+        aria-label={maximized ? 'Restore window' : 'Maximize window'}
+      >
         {maximized ? <Copy size={11} /> : <Square size={11} />}
       </button>
-      <button className="win-btn close" onClick={() => api.win.close()} title="Close">
+      <button className="win-btn close" onClick={() => api.win.close()} title="Close" aria-label="Close window">
         <X size={14} />
       </button>
     </div>
