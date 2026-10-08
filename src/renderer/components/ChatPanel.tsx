@@ -30,6 +30,7 @@ import { editorRef } from '../lib/editorRef'
 import { attachSelectionToChat } from '../lib/aiActions'
 import { useAppStore } from '../store/app'
 import { useAIStore, type ChatMessage, type ToolEventEntry } from '../store/ai'
+import { ActivityPanel } from './ChatActivity'
 import { ModelSelect } from './ModelSelect'
 import { Dropdown, EmptyState, IconButton, Segmented, Spinner, type MenuItem } from './ui'
 
@@ -148,6 +149,7 @@ function MessageView({ message }: { message: ChatMessage }) {
         <Sparkles size={13} />
       </div>
       <div className="msg-body">
+        {message.activity && <ActivityPanel message={message} />}
         {message.error && (
           <div className="mb-2 flex items-start gap-2 rounded-lg border border-[#5a2a35] bg-[#2a1218] p-2.5 text-xs text-[var(--red)]">
             <AlertTriangle size={13} className="shrink-0 mt-0.5" />

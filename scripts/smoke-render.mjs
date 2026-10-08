@@ -253,6 +253,108 @@ async function main() {
   }
   checks.push(['project + AI chat sidebars visible simultaneously (left/right, collision-safe)', sidebarsOk])
 
+  // Live activity: a real chat turn and an agent turn record what the assistant
+  // did (phases, files read, reasoning, tool calls, timing) for the UI to show.
+  let activityOk = false
+  try {
+    const activityLib = await server.ssrLoadModule('/lib/activity.ts')
+    const aiMod = await server.ssrLoadModule('/store/ai.ts')
+    const pure =
+      activityLib.toolLabel('{"path":"src/a.ts"}') === 'src/a.ts' &&
+      activityLib.summarizeToolResult('read_file', 'a\nb\nc', false) === '3 lines' &&
+      activityLib.phaseLabel({
+        ...activityLib.createActivity('m'),
+        phase: 'tool',
+        currentTool: { id: '1', name: 'read_file', label: 'x', startedAt: 0 },
+      }) === 'Running read_file'
+    const ai = aiMod.useAIStore
+    ai.getState().newSession('chat')
+    await ai.getState().send('why does the terminal work this way? explain your reasoning')
+    const chatMsg = ai.getState().activeSession()?.messages.at(-1)
+    const ca = chatMsg?.activity
+    const chatOk =
+      !!ca &&
+      ca.phase === 'done' &&
+      !chatMsg.pending &&
+      !chatMsg.error &&
+      ca.endedAt >= ca.startedAt &&
+      ca.trail.length >= 3 &&
+      ca.chars > 0 &&
+      ca.contextFiles.length > 0 &&
+      (chatMsg.reasoning || '').length > 0 &&
+      chatMsg.content.length > 0
+
+    ai.getState().newSession('agent')
+    await ai.getState().send('read package.json and tell me what it is')
+    const agentMsg = ai.getState().activeSession()?.messages.at(-1)
+    const aa = agentMsg?.activity
+    const agentOk =
+      !!aa &&
+      aa.phase === 'done' &&
+      !agentMsg.pending &&
+      aa.tools >= 1 &&
+      aa.step >= 2 &&
+      aa.touchedFiles.includes('package.json') &&
+      aa.trail.some((t) => t.kind === 'tool') &&
+      !agentMsg.pending
+    activityOk = pure && chatOk && agentOk
+    if (!activityOk) {
+      console.log('  (activity debug:', JSON.stringify({ pure, chatOk, agentOk, ca: ca && { phase: ca.phase, trail: ca.trail.length, chars: ca.chars, ctx: ca.contextFiles.length }, aa: aa && { phase: aa.phase, tools: aa.tools, step: aa.step, touched: aa.touchedFiles } }).slice(0, 400), ')')
+    }
+  } catch (err) {
+    console.log('  (activity checks error:', String(err).slice(0, 160), ')')
+  }
+  checks.push(['live activity: a turn records phases, files read, reasoning, tool calls & timing', activityOk])
+
+  // The activity panel renders both states: live (phase, stages, reasoning,
+  // files) and finished ("Worked for …" summary).
+  let panelOk = false
+  try {
+    const { renderToStaticMarkup } = await import('react-dom/server')
+    const { createElement } = await import('react')
+    const { ActivityPanel } = await server.ssrLoadModule('/components/ChatActivity.tsx')
+    const { createActivity } = await server.ssrLoadModule('/lib/activity.ts')
+    const base = createActivity('kinetic-coder:7b')
+    const liveMsg = {
+      id: 'live',
+      role: 'assistant',
+      content: '',
+      pending: true,
+      createdAt: Date.now(),
+      reasoning: 'Let me look at the terminal code first',
+      activity: {
+        ...base,
+        phase: 'tool',
+        step: 2,
+        maxSteps: 8,
+        chars: 120,
+        tools: 1,
+        currentTool: { id: '1', name: 'read_file', label: 'src/x.ts', startedAt: Date.now() },
+        contextFiles: ['src/a.ts'],
+        touchedFiles: ['package.json'],
+        trail: [{ at: Date.now(), text: 'Searching the project knowledge base', kind: 'info' }],
+      },
+    }
+    const liveHtml = renderToStaticMarkup(createElement(ActivityPanel, { message: liveMsg }))
+    const doneHtml = renderToStaticMarkup(
+      createElement(ActivityPanel, {
+        message: { ...liveMsg, pending: false, activity: { ...liveMsg.activity, phase: 'done', endedAt: Date.now() + 100 } },
+      }),
+    )
+    panelOk =
+      liveHtml.includes('Running read_file') &&
+      liveHtml.includes('Thinking out loud') &&
+      liveHtml.includes('src/a.ts') &&
+      liveHtml.includes('package.json') &&
+      liveHtml.includes('Write') &&
+      doneHtml.includes('Worked for') &&
+      doneHtml.includes('Reasoning') &&
+      !doneHtml.includes('Thinking out loud')
+  } catch (err) {
+    console.log('  (activity panel render error:', String(err).slice(0, 200), ')')
+  }
+  checks.push(['activity panel renders live and finished states', panelOk])
+
   // Prescan: the AI gets a one-line understanding of every file.
   let prescanOk = false
   let retrievalOk = false

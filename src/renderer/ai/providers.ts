@@ -155,6 +155,10 @@ async function* streamOpenAICompat(
     const choice = evt?.choices?.[0]
     if (!choice) continue
     const delta = choice.delta || {}
+    // Reasoning-capable models (Ollama thinking models, DeepSeek-style APIs)
+    // stream their thinking in a separate delta field.
+    const reasoning = delta.reasoning_content ?? delta.reasoning
+    if (typeof reasoning === 'string' && reasoning) yield { type: 'reasoning', text: reasoning }
     if (delta.content) yield { type: 'text', text: delta.content }
     if (Array.isArray(delta.tool_calls)) {
       for (const tc of delta.tool_calls) {
@@ -262,6 +266,8 @@ async function* streamAnthropic(
       const delta = evt.delta
       if (delta?.type === 'text_delta' && delta.text) {
         yield { type: 'text', text: delta.text }
+      } else if (delta?.type === 'thinking_delta' && delta.thinking) {
+        yield { type: 'reasoning', text: delta.thinking }
       } else if (delta?.type === 'input_json_delta' && delta.partial_json && currentTool) {
         currentTool.args += delta.partial_json
       }
@@ -355,7 +361,7 @@ async function* streamGemini(
     const parts = evt?.candidates?.[0]?.content?.parts
     if (!Array.isArray(parts)) continue
     for (const part of parts) {
-      if (part.text) yield { type: 'text', text: part.text }
+      if (part.text) yield part.thought ? { type: 'reasoning', text: part.text } : { type: 'text', text: part.text }
       if (part.functionCall) {
         yield {
           type: 'tool_call',

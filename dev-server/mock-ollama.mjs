@@ -59,7 +59,7 @@ function sse(res, obj) {
 }
 
 /** Stream a string word-by-word as SSE chat-completion deltas. */
-async function streamText(res, text, model, toolCalls) {
+async function streamText(res, text, model, toolCalls, thinking = null) {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -74,6 +74,16 @@ async function streamText(res, text, model, toolCalls) {
       choices: [{ index: 0, delta, finish_reason: null }],
     })
   send({ role: 'assistant', content: '' })
+  // Like a real model: a short pause before the first token, and an optional
+  // reasoning trace streamed in the separate `reasoning_content` field.
+  await sleep(400)
+  if (thinking) {
+    for (const w of thinking.split(/(\s+)/)) {
+      if (!w) continue
+      send({ reasoning_content: w })
+      await sleep(22)
+    }
+  }
   if (toolCalls) {
     for (const tc of toolCalls) {
       send({ tool_calls: [{ index: 0, id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.arguments } }] })
@@ -229,7 +239,11 @@ const server = http.createServer(async (req, res) => {
     const body = JSON.parse(await readBody(req) || '{}')
     const messages = body.messages || []
     const reply = cannedReply(messages, body.tools)
-    return streamText(res, reply.text, body.model || 'kinetic-coder:7b', reply.toolCalls)
+    // Questions that ask "why" / "think" / "reason" get a visible reasoning trace.
+    const thinking = /\b(why|think|reason)/i.test(lastUserMessage(messages))
+      ? 'The user wants the reasoning behind this. I will check the project context I was given, pick the files that matter, and answer concisely. '
+      : null
+    return streamText(res, reply.text, body.model || 'kinetic-coder:7b', reply.toolCalls, thinking)
   }
 
   if (path === '/v1/models' && method === 'GET') {

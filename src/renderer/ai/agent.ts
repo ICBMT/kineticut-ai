@@ -115,6 +115,7 @@ Rules:
 - After finishing, summarize what you changed and suggest next steps. Be concise.`
 
 export type AgentToolEvent =
+  | { type: 'step_start'; step: number; maxSteps: number }
   | { type: 'tool_start'; call: AIToolCall }
   | { type: 'tool_end'; call: AIToolCall; result: string; error?: boolean }
 
@@ -138,6 +139,7 @@ export async function runAgent(args: AgentRunArgs): Promise<void> {
 
   for (let step = 0; step < maxSteps; step++) {
     if (signal?.aborted) return
+    onEvent({ type: 'step_start', step: step + 1, maxSteps })
     const assistant: AIMessage = { role: 'assistant', content: '' }
     for await (const evt of streamChat({
       provider,
@@ -148,6 +150,8 @@ export async function runAgent(args: AgentRunArgs): Promise<void> {
     })) {
       if (evt.type === 'text') {
         assistant.content += evt.text
+        onEvent(evt)
+      } else if (evt.type === 'reasoning') {
         onEvent(evt)
       } else if (evt.type === 'tool_call') {
         assistant.toolCalls = [...(assistant.toolCalls || []), evt.call]

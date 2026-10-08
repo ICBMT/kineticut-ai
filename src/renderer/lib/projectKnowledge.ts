@@ -390,14 +390,25 @@ export function isProjectMetaQuery(query: string): boolean {
  * relevant files (with summaries), plus the full content of any file the
  * question explicitly mentions.
  */
-export async function retrieveRelevantFilesForQuery(query: string, k = 5): Promise<string | null> {
+export interface KnowledgeContext {
+  /** Prompt block for the model (null when there is nothing to inject). */
+  block: string | null
+  /** Relative paths of the files selected for this question. */
+  files: string[]
+}
+
+/**
+ * Same as retrieveRelevantFilesForQuery, but also reports which files were
+ * selected so the chat can show what the assistant is reading.
+ */
+export async function retrieveContextForQuery(query: string, k = 5): Promise<KnowledgeContext> {
   const folder = useAppStore.getState().folder
-  if (!folder) return null
+  if (!folder) return { block: null, files: [] }
   let snap: ProjectIndexSnapshot
   try {
     snap = await api.projectIndex.get(folder)
   } catch {
-    return null
+    return { block: null, files: [] }
   }
   const entries = snap.entries || []
 
@@ -412,10 +423,11 @@ export async function retrieveRelevantFilesForQuery(query: string, k = 5): Promi
   }
 
   if (entries.length === 0) {
-    return header.length > 0 ? header.join('\n') : null
+    return { block: header.length > 0 ? header.join('\n') : null, files: [] }
   }
 
   const hits = retrieveRelevantFiles(entries, query, k)
+  const files = hits.map((h) => h.entry.rel)
   const lines = hits.map((h) => {
     const syms = h.entry.symbols.length ? ` [${h.entry.symbols.slice(0, 6).join(', ')}]` : ''
     const summary = h.entry.summary ? `: ${h.entry.summary.slice(0, 140)}` : ''
@@ -428,6 +440,7 @@ export async function retrieveRelevantFilesForQuery(query: string, k = 5): Promi
   // Explicit file mention → include its content so the AI can answer precisely.
   const mentioned = findMentionedFile(query, entries)
   if (mentioned) {
+    if (!files.includes(mentioned.rel)) files.push(mentioned.rel)
     try {
       const res = await api.fs.read(mentioned.path)
       if (!res.binary && res.content) {
@@ -449,7 +462,12 @@ export async function retrieveRelevantFilesForQuery(query: string, k = 5): Promi
     if (pj) excerpts.push(`package.json (identity + scripts):\n${pj.slice(0, 1500)}`)
     if (excerpts.length > 0) block += `\n\n${excerpts.join('\n\n')}`
   }
-  return block
+  return { block, files }
+}
+
+/** Prompt block only, for callers that just need the text. */
+export async function retrieveRelevantFilesForQuery(query: string, k = 5): Promise<string | null> {
+  return (await retrieveContextForQuery(query, k)).block
 }
 
 /* ------------------------------ knowledge keeper ---------------------------- */

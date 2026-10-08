@@ -32,6 +32,8 @@ export interface AIToolDef {
 
 export type AIStreamEvent =
   | { type: 'text'; text: string }
+  /** The model's visible reasoning / thinking trace (reasoning-capable models only). */
+  | { type: 'reasoning'; text: string }
   | { type: 'tool_call'; call: AIToolCall }
   | { type: 'error'; error: string }
   | { type: 'done' }
