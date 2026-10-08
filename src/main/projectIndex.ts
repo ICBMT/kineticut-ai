@@ -1,12 +1,13 @@
 /**
- * Incremental project index (main process).
+ * Incremental project index + knowledge base (main process).
  *
- * A persistent, incrementally-maintained index of a workspace: the file list,
- * top-level entries, and cached excerpts of key files (package.json, README,
- * tsconfig, Dockerfile…). Built with chunked async scans so the main process
- * stays responsive, persisted to userData so restarts load instantly, and kept
- * fresh by a chokidar watcher. The AI project brief reads from this index
- * instead of re-walking the tree — fast, and light on resources.
+ * A persistent, incrementally-maintained index of a workspace. Each indexed
+ * file carries lightweight metadata (language, declared symbols, imports —
+ * extracted by the shared fileMeta module, so any code type is understood)
+ * plus an optional AI-generated one-line summary written back by the
+ * renderer's prescan. Built with chunked async scans so the main process
+ * stays responsive, persisted to userData so restarts load instantly, and
+ * kept fresh by a chokidar watcher.
  */
 import { app } from 'electron'
 import { createHash } from 'node:crypto'
@@ -15,7 +16,8 @@ import type { Dirent } from 'node:fs'
 import { basename, join, relative } from 'node:path'
 import chokidar from 'chokidar'
 import { simpleGit } from 'simple-git'
-import type { ProjectIndexSnapshot } from '../shared/types'
+import { extractFileMeta, isTextLike } from '../shared/fileMeta'
+import type { ProjectIndexEntry, ProjectIndexSnapshot } from '../shared/types'
 
 const KEY_FILES = new Set([
   'package.json',
@@ -48,13 +50,10 @@ const SKIP_DIRS = new Set([
 const MAX_FILES = 20000
 const MAX_KEY_FILE_BYTES = 20000
 const MAX_TREE_PATHS = 150
+/** Files up to this size get full metadata extraction during the scan. */
+const MAX_META_BYTES = 16384
 
-interface IndexedFile {
-  path: string
-  rel: string
-  size: number
-  mtime: number
-}
+interface IndexedFile extends ProjectIndexEntry {}
 
 interface IndexState {
   root: string
@@ -89,6 +88,35 @@ async function readKeyExcerpt(path: string): Promise<string | null> {
   }
 }
 
+/** Read + extract metadata for a file (capped; binaries skipped). */
+async function buildEntry(path: string, rel: string, size: number, mtime: number): Promise<IndexedFile> {
+  const entry: IndexedFile = {
+    path,
+    rel,
+    size,
+    mtime,
+    language: 'plaintext',
+    symbols: [],
+    imports: [],
+  }
+  try {
+    const meta = extractFileMeta(rel, '')
+    entry.language = meta.language
+    if (size > 0 && size <= MAX_META_BYTES && isTextLike(rel)) {
+      const buf = await fs.readFile(path)
+      if (!buf.includes(0)) {
+        const full = extractFileMeta(rel, buf.toString('utf8'))
+        entry.language = full.language
+        entry.symbols = full.symbols
+        entry.imports = full.imports
+      }
+    }
+  } catch {
+    /* keep defaults */
+  }
+  return entry
+}
+
 function isKeyFileName(name: string): boolean {
   return KEY_FILES.has(name) || /^readme/i.test(name)
 }
@@ -96,6 +124,11 @@ function isKeyFileName(name: string): boolean {
 /** Chunked breadth-first scan; yields to the event loop every 100 files. */
 async function scan(state: IndexState): Promise<void> {
   const { root } = state
+  // Always start from a clean slate (the state may hold a persisted index).
+  state.files = []
+  state.byRel.clear()
+  state.keyFiles = {}
+  state.topLevel = []
   const queue: string[] = [root]
   let count = 0
   while (queue.length > 0) {
@@ -129,7 +162,7 @@ async function scan(state: IndexState): Promise<void> {
       } catch {
         /* ignore */
       }
-      const file: IndexedFile = { path: p, rel, size, mtime }
+      const file = await buildEntry(p, rel, size, mtime)
       state.files.push(file)
       state.byRel.set(rel, file)
       if (dir === root && isKeyFileName(entry.name)) {
@@ -202,10 +235,15 @@ function startWatching(state: IndexState): void {
       try {
         const st = await fs.stat(p)
         if (!st.isFile()) return
-        const file: IndexedFile = { path: p, rel, size: st.size, mtime: st.mtimeMs }
-        const existing = state.byRel.get(rel)
+        // Preserve any existing summary when the file content is unchanged.
+        const prev = state.byRel.get(rel)
+        const file = await buildEntry(p, rel, st.size, st.mtimeMs)
+        if (prev?.summary && prev.summaryAt && prev.mtime === st.mtimeMs) {
+          file.summary = prev.summary
+          file.summaryAt = prev.summaryAt
+        }
         state.byRel.set(rel, file)
-        if (existing) {
+        if (prev) {
           const idx = state.files.findIndex((f) => f.rel === rel)
           if (idx >= 0) state.files[idx] = file
         } else {
@@ -257,7 +295,11 @@ async function getState(root: string): Promise<IndexState> {
   // Rescan when there is no persisted index, or when files changed on disk
   // after the last scan (cheap mtime check over the newest indexed file).
   const newestMtime = state.files.reduce((max, f) => Math.max(max, f.mtime), 0)
-  const stale = !loaded || state.files.length === 0 || newestMtime > state.scannedAt
+  const stale =
+    !loaded ||
+    state.files.length === 0 ||
+    state.files.length !== state.byRel.size ||
+    newestMtime > state.scannedAt
   if (stale) {
     state.scanning = scan(state)
       .then(() => schedulePersist(state))
@@ -268,7 +310,7 @@ async function getState(root: string): Promise<IndexState> {
   return state
 }
 
-/** Build a snapshot for the AI project brief (fast path: everything cached). */
+/** Build a snapshot for the AI (fast path: everything cached). */
 export async function projectIndexSnapshot(root: string): Promise<ProjectIndexSnapshot> {
   const state = await getState(root)
 
@@ -312,7 +354,25 @@ export async function projectIndexSnapshot(root: string): Promise<ProjectIndexSn
     readme: readme?.slice(0, 2000),
     gitBranch,
     scannedAt: state.scannedAt || Date.now(),
+    entries: state.files,
   }
+}
+
+/** Batch-upsert AI file summaries (called by the renderer's prescan). */
+export async function setFileSummaries(
+  root: string,
+  items: { rel: string; summary: string; summaryAt: number }[],
+): Promise<void> {
+  const state = indexes.get(root)
+  if (!state) return
+  for (const item of items) {
+    const entry = state.byRel.get(item.rel)
+    if (entry) {
+      entry.summary = item.summary
+      entry.summaryAt = item.summaryAt
+    }
+  }
+  schedulePersist(state)
 }
 
 /** Force a full rescan (used by the "rescan" action). */

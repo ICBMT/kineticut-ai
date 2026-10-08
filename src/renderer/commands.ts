@@ -8,6 +8,7 @@ import {
   ArrowLeftRight,
   Bot,
   BrainCircuit,
+  Database,
   FileCode,
   FilePlus,
   FolderOpen,
@@ -41,6 +42,7 @@ import {
   triggerInlineCompletion,
 } from './lib/aiActions'
 import { editorRef } from './lib/editorRef'
+import { prescanProject } from './lib/projectKnowledge'
 import { refreshProjectBrief } from './lib/projectBrief'
 import { basename, joinPath, sleep } from './lib/utils'
 import { useAppStore } from './store/app'
@@ -258,6 +260,10 @@ export const COMMANDS: Command[] = [
   { id: 'ai.analyzeProject', title: 'Analyze Project with AI', category: 'AI', icon: BrainCircuit, keywords: 'project brief scan understand workspace overview', run: () => {
     useAppStore.getState().setChatVisible(true)
     void refreshProjectBrief()
+  } },
+  { id: 'ai.prescan', title: 'Prescan Project (build AI knowledge)', category: 'AI', icon: Database, keywords: 'index files summaries knowledge base understand every file', run: () => {
+    useAppStore.getState().setChatVisible(true)
+    void prescanProject()
   } },
   { id: 'ai.toggleAgent', title: 'Toggle Agent Mode', category: 'AI', icon: Bot, shortcut: 'Ctrl+Shift+A', keywords: 'tools autonomous', run: () => {
     const ai = useAIStore.getState()

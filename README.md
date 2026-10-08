@@ -14,11 +14,15 @@ models via **Ollama**, frontier models (Claude, GPT, Gemini, …) via API. Built
   *Agent mode* that reads/searches your workspace, proposes file edits (reviewed in
   a side-by-side diff), and runs commands (with confirmation). Works with Ollama
   locally and OpenAI-compatible / Anthropic / Gemini APIs.
-- **The AI knows your project** — ask it to *Analyze Project* (button, command
-  palette, or AI menu) and it writes a **project brief** from a persistent,
-  incremental **project index** in the main process (chunked scans, disk-cached,
-  kept fresh by file watchers — fast and light on resources). Scanning is always
-  on demand, never automatic. The brief is injected into every chat and agent prompt.
+- **The AI knows your project — and every file in it.** Hit **Prescan** (chat
+  card, command palette, or AI menu) and Kineticut AI builds a *knowledge base*:
+  a one-line AI summary of every file, stored in the persistent project index.
+  It understands **any type of code** (shared extractor reads languages, symbols,
+  imports — TS/JS, Python, Rust, Go, configs, markdown…) and detects the
+  **infrastructure** (stack, package manager, scripts, CI, Docker). When you ask
+  a question, the AI is automatically handed the **specific relevant files**
+  (plus the full content of any file you name) — in chat and in agent mode
+  (via the `project_map` tool). A keeper re-summarizes files as they change.
 - **Dual sidebars** — the project sidebar (explorer/search/git/settings) and the
   AI chat sidebar are independent and visible **at the same time**, each on its
   configured side (left/right, swappable in Settings → Layout).

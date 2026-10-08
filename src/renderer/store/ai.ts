@@ -4,6 +4,7 @@ import { runAgent, type AgentToolEvent } from '../ai/agent'
 import { streamChat } from '../ai/providers'
 import type { AIMessage, AIStreamEvent, AIToolCall } from '../ai/types'
 import { currentBriefText } from '../lib/projectBrief'
+import { retrieveRelevantFilesForQuery } from '../lib/projectKnowledge'
 import { resolveChatModel, useSettingsStore } from './settings'
 
 export interface ToolEventEntry {
@@ -163,17 +164,20 @@ export const useAIStore = create<AIState>()(
 
         const current = get().activeSession()
         const brief = currentBriefText()
+        // Retrieve the specific files relevant to this question.
+        const knowledgeBlock = await retrieveRelevantFilesForQuery(text)
         const baseHistory: AIMessage[] = (current?.messages || [])
           .filter((m) => m.id !== assistantMsg.id && !m.pending)
           .map(toAIMessage)
-        const history: AIMessage[] = brief
-          ? [
-              {
-                role: 'system',
-                content: `Project context (the user's open workspace):\n${brief}`,
-              },
-              ...baseHistory,
-            ]
+        const systemParts: string[] = []
+        if (brief) {
+          systemParts.push(`Project context (the user's open workspace):\n${brief}`)
+        }
+        if (knowledgeBlock) {
+          systemParts.push(knowledgeBlock)
+        }
+        const history: AIMessage[] = systemParts.length
+          ? [{ role: 'system', content: systemParts.join('\n\n') }, ...baseHistory]
           : baseHistory
 
         const patch = (p: Partial<ChatMessage>) =>

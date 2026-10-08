@@ -3,6 +3,7 @@ import { Zap } from 'lucide-react'
 import { api } from './api'
 import { installKeybindings } from './commands'
 import { Logo } from './components/Logo'
+import { maybeStartKnowledgeKeeper } from './lib/projectKnowledge'
 import { syncOpenModelsWithDisk } from './lib/monaco'
 import { cn } from './lib/utils'
 import { applyAppearance, useSettingsStore } from './store/settings'
@@ -63,9 +64,11 @@ export function App() {
     document.documentElement.dataset.theme = theme
   }, [theme])
 
-  // Watch the workspace: refresh the file index, git status, and open editors.
+  // Watch the workspace: refresh the file index, git status, open editors,
+  // and resume the knowledge keeper if this project was already prescanned.
   useEffect(() => {
     if (!folder) return
+    void maybeStartKnowledgeKeeper()
     let disposed = false
     let unwatch: (() => void) | null = null
     let timer: ReturnType<typeof setTimeout> | null = null

@@ -1,7 +1,9 @@
 /**
- * Incremental project index for the dev server — mirrors the Electron main
- * process implementation (src/main/projectIndex.ts) so the browser preview
- * behaves identically: chunked scan, disk cache, chokidar incremental updates.
+ * Incremental project index + knowledge base for the dev server — mirrors
+ * the Electron main process implementation (src/main/projectIndex.ts) so the
+ * browser preview behaves identically: chunked scan, per-file metadata (via
+ * the JS port of shared/fileMeta), disk cache, chokidar incremental updates,
+ * and AI summary storage.
  */
 import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
@@ -9,6 +11,7 @@ import { homedir } from 'node:os'
 import { basename, join, relative } from 'node:path'
 import chokidar from 'chokidar'
 import { simpleGit } from 'simple-git'
+import { extractFileMeta, isTextLike } from './file-meta.mjs'
 
 const KEY_FILES = new Set([
   'package.json',
@@ -41,6 +44,7 @@ const SKIP_DIRS = new Set([
 const MAX_FILES = 20000
 const MAX_KEY_FILE_BYTES = 20000
 const MAX_TREE_PATHS = 150
+const MAX_META_BYTES = 16384
 
 const indexes = new Map()
 
@@ -63,12 +67,34 @@ async function readKeyExcerpt(path) {
   }
 }
 
+async function buildEntry(path, rel, size, mtime) {
+  const entry = { path, rel, size, mtime, language: 'plaintext', symbols: [], imports: [] }
+  try {
+    entry.language = extractFileMeta(rel, '').language
+    if (size > 0 && size <= MAX_META_BYTES && isTextLike(rel)) {
+      const buf = await fs.readFile(path)
+      if (!buf.includes(0)) {
+        const full = extractFileMeta(rel, buf.toString('utf8'))
+        entry.language = full.language
+        entry.symbols = full.symbols
+        entry.imports = full.imports
+      }
+    }
+  } catch {}
+  return entry
+}
+
 function isKeyFileName(name) {
   return KEY_FILES.has(name) || /^readme/i.test(name)
 }
 
 async function scan(state) {
   const { root } = state
+  // Always start from a clean slate (the state may hold a persisted index).
+  state.files = []
+  state.byRel.clear()
+  state.keyFiles = {}
+  state.topLevel = []
   const queue = [root]
   let count = 0
   while (queue.length > 0) {
@@ -100,7 +126,7 @@ async function scan(state) {
         size = st.size
         mtime = st.mtimeMs
       } catch {}
-      const file = { path: p, rel, size, mtime }
+      const file = await buildEntry(p, rel, size, mtime)
       state.files.push(file)
       state.byRel.set(rel, file)
       if (dir === root && isKeyFileName(entry.name)) {
@@ -170,10 +196,14 @@ function startWatching(state) {
       try {
         const st = await fs.stat(p)
         if (!st.isFile()) return
-        const file = { path: p, rel, size: st.size, mtime: st.mtimeMs }
-        const existing = state.byRel.get(rel)
+        const prev = state.byRel.get(rel)
+        const file = await buildEntry(p, rel, st.size, st.mtimeMs)
+        if (prev?.summary && prev.summaryAt && prev.mtime === st.mtimeMs) {
+          file.summary = prev.summary
+          file.summaryAt = prev.summaryAt
+        }
         state.byRel.set(rel, file)
-        if (existing) {
+        if (prev) {
           const idx = state.files.findIndex((f) => f.rel === rel)
           if (idx >= 0) state.files[idx] = file
         } else {
@@ -217,7 +247,11 @@ async function getState(root) {
   }
   indexes.set(root, state)
   const newestMtime = state.files.reduce((max, f) => Math.max(max, f.mtime), 0)
-  const stale = !loaded || state.files.length === 0 || newestMtime > state.scannedAt
+  const stale =
+    !loaded ||
+    state.files.length === 0 ||
+    state.files.length !== state.byRel.size ||
+    newestMtime > state.scannedAt
   if (stale) {
     state.scanning = scan(state)
       .then(() => schedulePersist(state))
@@ -262,7 +296,21 @@ export async function projectIndexSnapshot(root) {
     readme: readme?.slice(0, 2000),
     gitBranch,
     scannedAt: state.scannedAt || Date.now(),
+    entries: state.files,
   }
+}
+
+export async function setFileSummaries(root, items) {
+  const state = indexes.get(root)
+  if (!state) return
+  for (const item of items) {
+    const entry = state.byRel.get(item.rel)
+    if (entry) {
+      entry.summary = item.summary
+      entry.summaryAt = item.summaryAt
+    }
+  }
+  schedulePersist(state)
 }
 
 export async function rescanProjectIndex(root) {

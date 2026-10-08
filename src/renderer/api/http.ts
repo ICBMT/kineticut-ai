@@ -221,6 +221,7 @@ export function createHttpApi(): KineticAPI {
     projectIndex: {
       get: (root) => http<any>(`/api/project-index${qs({ root })}`),
       rescan: (root) => post<any>('/api/project-index/rescan', { root }),
+      setSummaries: (root, items) => post<any>('/api/project-index/summaries', { root, items }),
     },
     win: {
       minimize: () => {},

@@ -118,6 +118,20 @@ export interface SystemInfo {
   isElectron: boolean
 }
 
+/** One indexed file, with extracted metadata and an optional AI summary. */
+export interface ProjectIndexEntry {
+  path: string
+  rel: string
+  size: number
+  mtime: number
+  language: string
+  symbols: string[]
+  imports: string[]
+  /** AI-generated one-line summary (from the prescan). */
+  summary?: string
+  summaryAt?: number
+}
+
 /** Snapshot of the main-process project index (see src/main/projectIndex.ts). */
 export interface ProjectIndexSnapshot {
   folder: string
@@ -132,6 +146,8 @@ export interface ProjectIndexSnapshot {
   readme?: string
   gitBranch?: string | null
   scannedAt: number
+  /** Every indexed file with metadata + summaries (the knowledge base). */
+  entries: ProjectIndexEntry[]
 }
 
 export type SettingsBag = Record<string, unknown>
@@ -188,6 +204,11 @@ export interface KineticAPI {
   projectIndex: {
     get(root: string): Promise<ProjectIndexSnapshot>
     rescan(root: string): Promise<ProjectIndexSnapshot>
+    /** Batch-upsert AI file summaries into the index (persisted). */
+    setSummaries(
+      root: string,
+      items: { rel: string; summary: string; summaryAt: number }[],
+    ): Promise<void>
   }
   win: {
     minimize(): void

@@ -150,6 +150,7 @@ export function TitleBar() {
   const aiMenu: MenuItem[] = [
     { icon: MessageSquarePlus, label: 'New Chat', onClick: () => runCommand('ai.newChat') },
     { icon: BrainCircuit, label: 'Analyze Project with AI', onClick: () => runCommand('ai.analyzeProject') },
+    { icon: BrainCircuit, label: 'Prescan Project (build AI knowledge)', onClick: () => runCommand('ai.prescan') },
     { icon: Bot, label: 'Toggle Agent Mode', shortcut: 'Ctrl+Shift+A', onClick: () => runCommand('ai.toggleAgent') },
     { type: 'separator' },
     { icon: Sparkles, label: 'Explain Code', shortcut: 'Ctrl+I', onClick: () => runCommand('ai.explain') },

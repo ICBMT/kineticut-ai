@@ -4,6 +4,7 @@
  * feeding results back until it produces a final answer.
  */
 import { api } from '../api'
+import { detectInfra } from '../lib/projectKnowledge'
 import { languageForPath } from '../lib/languages'
 import { joinPath, truncate } from '../lib/utils'
 import { useAppStore } from '../store/app'
@@ -78,6 +79,17 @@ export const AGENT_TOOLS: AIToolDef[] = [
     },
   },
   {
+    name: 'project_map',
+    description:
+      'Get the project map: stack and infrastructure, structure, and a one-line AI summary of every indexed file. Use it to navigate the project before reading files.',
+    parameters: {
+      type: 'object',
+      properties: {
+        maxFiles: { type: 'number', description: 'Maximum files to include (default 120).' },
+      },
+    },
+  },
+  {
     name: 'open_file',
     description: 'Open a file in the editor so the user can see it.',
     parameters: {
@@ -95,6 +107,7 @@ You help with any software task: exploring codebases, writing features, fixing b
 
 Rules:
 - The workspace root is the user's opened folder. Prefer workspace-relative paths in tool calls.
+- Call project_map FIRST to navigate — it lists every file with a one-line AI summary.
 - Inspect code with read_file / list_dir / search_code before editing. Never guess file contents.
 - Prefer small, surgical changes. Preserve existing style and formatting.
 - write_file replaces the ENTIRE file — always include the complete new content, not a fragment.
@@ -252,6 +265,32 @@ async function executeToolCall(call: AIToolCall): Promise<{ result: string; erro
         const res = await api.system.exec(command, { cwd: folder || undefined, timeoutMs: 120000 })
         const output = `$ ${command}\n${res.stdout}${res.stderr ? `\n[stderr]\n${res.stderr}` : ''}\n[exit code ${res.code}]`
         return { result: truncate(output, 20000) }
+      }
+      case 'project_map': {
+        const folder = app.folder
+        if (!folder) return { result: 'Error: no workspace folder.', error: true }
+        const snap = await api.projectIndex.get(folder)
+        const infra = detectInfra(snap)
+        const all = snap.entries || []
+        const max = Math.min(Number(args.maxFiles) || 120, 300)
+        const summarized = all.filter((e) => e.summary).length
+        const files = all
+          .slice(0, max)
+          .map((e) => `- ${e.rel} (${e.language})${e.summary ? `: ${e.summary}` : ''}`)
+        const lines = [
+          `Project: ${snap.name} (${snap.fileCount} files)`,
+          `Stack: ${infra.stack.join(', ') || 'unknown'}`,
+          `Package manager: ${infra.packageManager || 'unknown'}`,
+          infra.devCommand ? `Dev: ${infra.devCommand}` : '',
+          infra.buildCommand ? `Build: ${infra.buildCommand}` : '',
+          infra.testCommand ? `Test: ${infra.testCommand}` : '',
+          infra.hasDocker ? 'Docker: yes' : '',
+          infra.hasCI ? `CI: ${infra.ciProvider}` : '',
+          `Files with AI summaries: ${summarized}/${all.length}`,
+          '',
+          files.join('\n'),
+        ].filter(Boolean)
+        return { result: truncate(lines.join('\n'), 20000) }
       }
       case 'open_file': {
         const target = resolvePath(args.path)

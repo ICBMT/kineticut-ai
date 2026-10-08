@@ -6,6 +6,7 @@ import {
   Bug,
   Check,
   ChevronDown,
+  Database,
   FileCode,
   History,
   Lightbulb,
@@ -22,6 +23,7 @@ import {
   X,
 } from 'lucide-react'
 import { renderMarkdown } from '../lib/markdown'
+import { prescanProject, useKnowledgeStore } from '../lib/projectKnowledge'
 import { refreshProjectBrief } from '../lib/projectBrief'
 import { cn } from '../lib/utils'
 import { editorRef } from '../lib/editorRef'
@@ -178,6 +180,7 @@ function ProjectBriefCard() {
   const brief = useAppStore((s) => s.projectBrief)
   const loading = useAppStore((s) => s.briefLoading)
   const folder = useAppStore((s) => s.folder)
+  const knowledge = useKnowledgeStore()
   const [expanded, setExpanded] = useState(false)
 
   if (!folder) return null
@@ -234,6 +237,28 @@ function ProjectBriefCard() {
           )}
         </div>
       )}
+
+      {/* AI knowledge base: per-file understanding */}
+      <div className="mt-2 pt-2 border-t border-[var(--border-soft)] flex items-center gap-2">
+        <Database size={12} className="text-[var(--text-faint)] shrink-0" />
+        <span className="text-[10px] text-[var(--text-faint)] flex-1 truncate">
+          {knowledge.scanning
+            ? `Prescanning… ${knowledge.done}/${knowledge.total} files`
+            : knowledge.summarized > 0
+              ? `AI knowledge: ${knowledge.summarized} of ${knowledge.files} files understood`
+              : 'AI knowledge: not built yet'}
+        </span>
+        {knowledge.scanning && <Spinner size={10} />}
+        {!knowledge.scanning && (
+          <button
+            className="btn !py-0.5 !px-2 text-[10px] shrink-0"
+            title="Summarize every file so the AI understands the whole project"
+            onClick={() => void prescanProject()}
+          >
+            {knowledge.summarized > 0 ? 'Rescan' : 'Prescan'}
+          </button>
+        )}
+      </div>
     </div>
   )
 }

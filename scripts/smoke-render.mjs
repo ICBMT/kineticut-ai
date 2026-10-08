@@ -253,6 +253,71 @@ async function main() {
   }
   checks.push(['project + AI chat sidebars visible simultaneously (left/right, collision-safe)', sidebarsOk])
 
+  // Prescan: the AI gets a one-line understanding of every file.
+  let prescanOk = false
+  let retrievalOk = false
+  let infraOk = false
+  let mentionOk = false
+  let contextBlockOk = false
+  try {
+    const knowledge = await server.ssrLoadModule('/lib/projectKnowledge.ts')
+    await knowledge.prescanProject({ maxFiles: 8 })
+    for (let i = 0; i < 80; i++) {
+      const ks = knowledge.useKnowledgeStore.getState()
+      if (!ks.scanning && ks.total > 0 && ks.done >= ks.total) break
+      await sleep(250)
+    }
+    const snap2 = await apiMod.api.projectIndex.get(
+      useAppStore.getState().folder || '/home/user/kineticut-ai',
+    )
+    const entries = snap2.entries || []
+    const withSummaries = entries.filter((e) => e.summary).length
+    prescanOk = withSummaries >= 5 && entries.length > 50
+
+    // Retrieval: a question about the terminal should surface terminal files.
+    const hits = knowledge.retrieveRelevantFiles(entries, 'how does the terminal panel work over websocket', 5)
+    retrievalOk = hits.slice(0, 3).some((h) => /TerminalPanel|main\/ipc/.test(h.entry.rel))
+
+    if (!prescanOk || !retrievalOk) {
+      const ks = knowledge.useKnowledgeStore.getState()
+      console.log(
+        '  debug:',
+        JSON.stringify({
+          status: { scanning: ks.scanning, done: ks.done, total: ks.total, summarized: ks.summarized },
+          entries: entries.length,
+          withSummaries,
+          sampleSummary: entries.find((e) => e.summary)?.summary?.slice(0, 60),
+          topHits: hits.slice(0, 4).map((h) => `${h.entry.rel} (${h.score.toFixed(1)})`),
+        }),
+      )
+    }
+
+    // Infrastructure detection: stack + package manager.
+    const infra = knowledge.detectInfra(snap2)
+    infraOk =
+      infra.stack.includes('TypeScript') &&
+      infra.stack.includes('Electron') &&
+      infra.packageManager === 'npm'
+
+    // Explicit file mention resolves to that file.
+    const mention = knowledge.findMentionedFile(
+      'explain src/renderer/App.tsx to me',
+      entries,
+    )
+    mentionOk = mention?.rel === 'src/renderer/App.tsx'
+
+    // The chat context block is built from the knowledge base.
+    const block = await knowledge.retrieveRelevantFilesForQuery('how does the terminal work?')
+    contextBlockOk = !!block && block.includes('Relevant files')
+  } catch (err) {
+    console.log('  (knowledge checks error:', String(err).slice(0, 160), ')')
+  }
+  checks.push(['prescan gives the AI a summary of every file', prescanOk])
+  checks.push(['retrieval surfaces the right files for a question', retrievalOk])
+  checks.push(['infrastructure detected (TypeScript / Electron / npm)', infraOk])
+  checks.push(['explicit file mention resolves for content injection', mentionOk])
+  checks.push(['knowledge context block built for chat prompts', contextBlockOk])
+
   // Regression: the editor lib can create an EMPTY model before ensureModel
   // runs — ensureModel must fill it (this was the "files appear empty" bug).
   let emptyModelFilled = false
