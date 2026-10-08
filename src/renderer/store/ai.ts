@@ -59,6 +59,12 @@ interface AIState {
   setMode(id: string, mode: 'chat' | 'agent'): void
   setAttach(a: { path: string; label: string; text: string } | null): void
   send(text: string): Promise<void>
+  /** Re-generate the last assistant reply (answers the last user message again). */
+  regenerate(): Promise<void>
+  /** Replace a user message's text and re-answer from there. */
+  editAndResend(messageId: string, text: string): Promise<void>
+  /** Stream one assistant reply into `assistantId` for `query`. */
+  runTurn(sessionId: string, assistantId: string, query: string): Promise<void>
   stop(): void
   clearActive(): void
   removeSession(id: string): void
@@ -106,6 +112,18 @@ export function currentActivityLabel(s: Pick<AIState, 'sessions'>): string | nul
   return null
 }
 
+function newAssistantMessage(): ChatMessage {
+  const { model } = resolveChatModel(useSettingsStore.getState())
+  return {
+    id: uid(),
+    role: 'assistant',
+    content: '',
+    pending: true,
+    createdAt: Date.now(),
+    activity: createActivity(model || undefined),
+  }
+}
+
 export const useAIStore = create<AIState>()(
   persist(
     (set, get) => ({
@@ -140,7 +158,7 @@ export const useAIStore = create<AIState>()(
       },
 
       send: async (text) => {
-        const settings = useSettingsStore.getState()
+        if (get().streaming) return
         let session = get().activeSession()
         if (!session) {
           get().newSession('chat')
@@ -158,15 +176,7 @@ export const useAIStore = create<AIState>()(
           content: userContent,
           createdAt: Date.now(),
         }
-        const { provider, model } = resolveChatModel(settings)
-        const assistantMsg: ChatMessage = {
-          id: uid(),
-          role: 'assistant',
-          content: '',
-          pending: true,
-          createdAt: Date.now(),
-          activity: createActivity(model || undefined),
-        }
+        const assistantMsg = newAssistantMessage()
         set((s) => ({
           sessions: s.sessions.map((x) =>
             x.id === sessionId
@@ -179,16 +189,68 @@ export const useAIStore = create<AIState>()(
           ),
           attach: null,
         }))
+        await get().runTurn(sessionId, assistantMsg.id, userContent)
+      },
 
+      regenerate: async () => {
+        if (get().streaming) return
+        const session = get().activeSession()
+        if (!session) return
+        let idx = -1
+        for (let i = session.messages.length - 1; i >= 0; i--) {
+          if (session.messages[i].role === 'user') {
+            idx = i
+            break
+          }
+        }
+        if (idx < 0) return
+        const user = session.messages[idx]
+        const assistantMsg = newAssistantMessage()
+        set((s) => ({
+          sessions: s.sessions.map((x) =>
+            x.id === session.id ? { ...x, messages: [...x.messages.slice(0, idx + 1), assistantMsg] } : x,
+          ),
+        }))
+        await get().runTurn(session.id, assistantMsg.id, user.content)
+      },
+
+      editAndResend: async (messageId, text) => {
+        if (get().streaming) return
+        const session = get().activeSession()
+        if (!session) return
+        const idx = session.messages.findIndex((m) => m.id === messageId)
+        if (idx < 0 || session.messages[idx].role !== 'user') return
+        // Keep the attached selection (if any) from the original message.
+        const original = session.messages[idx].content
+        const cut = original.indexOf('\n\n<attached-selection')
+        const content = text.trim() + (cut >= 0 ? original.slice(cut) : '')
+        const userMsg: ChatMessage = { ...session.messages[idx], content }
+        const assistantMsg = newAssistantMessage()
+        set((s) => ({
+          sessions: s.sessions.map((x) =>
+            x.id === session.id ? { ...x, messages: [...x.messages.slice(0, idx), userMsg, assistantMsg] } : x,
+          ),
+        }))
+        await get().runTurn(session.id, assistantMsg.id, content)
+      },
+
+      /**
+       * Stream one assistant reply into `assistantId`, answering `query`.
+       * Shared by send, regenerate and edit-and-resend.
+       */
+      runTurn: async (sessionId, assistantId, query) => {
+        const settings = useSettingsStore.getState()
+        const mode = get().sessions.find((x) => x.id === sessionId)?.mode ?? 'chat'
+        const { provider, model } = resolveChatModel(settings)
         if (!provider || !model) {
           const endedAt = Date.now()
           set((s) => ({
-            sessions: patchMessage(s.sessions, sessionId, assistantMsg.id, {
+            sessions: patchMessage(s.sessions, sessionId, assistantId, {
               pending: false,
               error:
                 'No AI model configured yet. Open Settings → Providers to connect Ollama (local) or add a frontier API key.',
               activity: {
-                ...assistantMsg.activity!,
+                ...createActivity(),
                 phase: 'error',
                 endedAt,
                 trail: [{ at: endedAt, text: 'No model configured', kind: 'err' }],
@@ -202,11 +264,11 @@ export const useAIStore = create<AIState>()(
         set({ streaming: true, abort: controller })
 
         const patch = (p: Partial<ChatMessage>) =>
-          set((s) => ({ sessions: patchMessage(s.sessions, sessionId, assistantMsg.id, p) }))
+          set((s) => ({ sessions: patchMessage(s.sessions, sessionId, assistantId, p) }))
 
         // This turn's live state. Every change is pushed to the message so the
         // chat UI (and the status bar) can show what the assistant is doing.
-        let activity: ChatActivity = assistantMsg.activity!
+        let activity: ChatActivity = createActivity(model)
         let content = ''
         let reasoning = ''
 
@@ -244,10 +306,10 @@ export const useAIStore = create<AIState>()(
 
         try {
           log('Searching the project knowledge base', 'info', { phase: 'context' })
-          const current = get().activeSession()
+          const current = get().sessions.find((x) => x.id === sessionId)
           const brief = currentBriefText()
           // Retrieve the specific files relevant to this question.
-          const ctx = await retrieveContextForQuery(text)
+          const ctx = await retrieveContextForQuery(query)
           const more = ctx.files.length > 4 ? ` +${ctx.files.length - 4} more` : ''
           log(
             ctx.files.length
@@ -258,7 +320,7 @@ export const useAIStore = create<AIState>()(
           )
 
           const baseHistory: AIMessage[] = (current?.messages || [])
-            .filter((m) => m.id !== assistantMsg.id && !m.pending)
+            .filter((m) => m.id !== assistantId && !m.pending)
             .map(toAIMessage)
           const systemParts: string[] = []
           if (brief) {
@@ -273,7 +335,7 @@ export const useAIStore = create<AIState>()(
 
           log(`Sent to ${model}, waiting for the first token`, 'info', { phase: 'thinking', model })
 
-          if (session.mode === 'agent') {
+          if (mode === 'agent') {
             const toolEvents: ToolEventEntry[] = []
             const onEvent = (evt: AIStreamEvent | AgentToolEvent) => {
               switch (evt.type) {
@@ -294,7 +356,7 @@ export const useAIStore = create<AIState>()(
                   break
                 case 'tool_call': {
                   const prev =
-                    get().sessions.find((x) => x.id === sessionId)?.messages.find((m) => m.id === assistantMsg.id)
+                    get().sessions.find((x) => x.id === sessionId)?.messages.find((m) => m.id === assistantId)
                       ?.toolCalls || []
                   patch({ toolCalls: [...prev, evt.call] })
                   toolEvents.push({ call: evt.call, status: 'running' })

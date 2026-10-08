@@ -257,6 +257,11 @@ export const COMMANDS: Command[] = [
     useAIStore.getState().newSession('chat')
     useAppStore.getState().setChatVisible(true)
   } },
+  { id: 'ai.focusChat', title: 'Focus AI Chat Input', category: 'AI', icon: MessageSquarePlus, shortcut: 'Ctrl+Alt+L', keywords: 'focus type message composer', run: () => {
+    useAppStore.getState().setChatVisible(true)
+    // The composer mounts with the sidebar; focus once it is in the DOM.
+    window.setTimeout(() => window.dispatchEvent(new Event('kinetic:focus-chat')), 60)
+  } },
   { id: 'ai.analyzeProject', title: 'Analyze Project with AI', category: 'AI', icon: BrainCircuit, keywords: 'project brief scan understand workspace overview', run: () => {
     useAppStore.getState().setChatVisible(true)
     void refreshProjectBrief()
@@ -306,6 +311,7 @@ export const KEYBINDINGS: { combo: string; commandId: string }[] = [
   { combo: 'mod+,', commandId: 'settings.open' },
   { combo: 'mod+i', commandId: 'ai.explain' },
   { combo: 'mod+shift+a', commandId: 'ai.toggleAgent' },
+  { combo: 'mod+alt+l', commandId: 'ai.focusChat' },
   { combo: 'mod+shift+i', commandId: 'editor.format' },
   { combo: 'mod+g', commandId: 'editor.goToLine' },
 ]

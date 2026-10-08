@@ -306,6 +306,54 @@ async function main() {
   }
   checks.push(['live activity: a turn records phases, files read, reasoning, tool calls & timing', activityOk])
 
+  // Chat ergonomics: slash commands and @file mentions are pure helpers; regenerate
+  // and edit-and-resend re-run the real turn pipeline on the same session.
+  let chatActionsOk = false
+  try {
+    const slash = await server.ssrLoadModule('/lib/slashCommands.ts')
+    const mentions = await server.ssrLoadModule('/lib/mentions.ts')
+    const aiStore = (await server.ssrLoadModule('/store/ai.ts')).useAIStore
+    const review = slash.expandSlash('/review')
+    const pureOk =
+      slash.slashQuery('/ex') === 'ex' &&
+      slash.slashQuery('/explain now') === null &&
+      slash.filterSlash('ex')[0]?.name === 'explain' &&
+      review?.kind === 'prompt' &&
+      review.needsCode === true &&
+      slash.expandSlash('/review focus on auth')?.text.includes('Additional instructions: focus on auth') &&
+      slash.expandSlash('/clear')?.kind === 'clear' &&
+      slash.expandSlash('/nosuchcommand') === null &&
+      mentions.activeMention('look at @src/ap', 16)?.query === 'src/ap' &&
+      mentions.activeMention('no mention here', 10) === null &&
+      mentions.insertMention('look at @src/ap', { start: 8, end: 16, query: 'src/ap' }, 'src/app.tsx').text ===
+        'look at @src/app.tsx ' &&
+      mentions.rankFiles(['docs/readme.md', 'src/app.tsx', 'src/apple.ts'], 'app')[0] === 'src/app.tsx'
+    aiStore.getState().newSession('chat')
+    await aiStore.getState().send('explain the terminal fallback in one line')
+    const before = aiStore.getState().activeSession().messages
+    await aiStore.getState().regenerate()
+    const afterRegen = aiStore.getState().activeSession().messages
+    const regenOk =
+      before.length === 2 &&
+      afterRegen.length === 2 &&
+      afterRegen[0].content === before[0].content &&
+      afterRegen[1].id !== before[1].id &&
+      afterRegen[1].activity?.phase === 'done' &&
+      !afterRegen[1].pending
+    await aiStore.getState().editAndResend(afterRegen[0].id, 'why is the terminal fallback used? explain your reasoning')
+    const edited = aiStore.getState().activeSession().messages
+    const editOk =
+      edited.length === 2 &&
+      edited[0].content.startsWith('why is the terminal fallback used') &&
+      edited[1].activity?.phase === 'done' &&
+      !edited[1].pending
+    chatActionsOk = pureOk && regenOk && editOk
+    if (!chatActionsOk) console.log('  (chat actions debug:', JSON.stringify({ pureOk, regenOk, editOk, n: edited.length }), ')')
+  } catch (err) {
+    console.log('  (chat actions error:', String(err).slice(0, 200), ')')
+  }
+  checks.push(['chat: slash commands, @file mentions, regenerate & edit-and-resend', chatActionsOk])
+
   // The activity panel renders both states: live (phase, stages, reasoning,
   // files) and finished ("Worked for …" summary).
   let panelOk = false

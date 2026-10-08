@@ -6,6 +6,7 @@ import {
   Bug,
   Check,
   ChevronDown,
+  Copy,
   Database,
   FileCode,
   History,
@@ -13,8 +14,11 @@ import {
   MessageSquare,
   MessageSquarePlus,
   Paperclip,
+  PencilLine,
   RefreshCw,
+  RotateCw,
   Send,
+  Settings,
   Sparkles,
   Square,
   TestTube2,
@@ -25,9 +29,11 @@ import {
 import { renderMarkdown } from '../lib/markdown'
 import { prescanProject, useKnowledgeStore } from '../lib/projectKnowledge'
 import { refreshProjectBrief } from '../lib/projectBrief'
-import { cn } from '../lib/utils'
+import { cn, basename } from '../lib/utils'
 import { editorRef } from '../lib/editorRef'
-import { attachSelectionToChat } from '../lib/aiActions'
+import { attachSelectionToChat, currentCodeAttachment } from '../lib/aiActions'
+import { expandSlash, filterSlash, slashQuery, type SlashCommand } from '../lib/slashCommands'
+import { activeMention, insertMention, loadMentionFiles, rankFiles, type MentionMatch } from '../lib/mentions'
 import { useAppStore } from '../store/app'
 import { useAIStore, type ChatMessage, type ToolEventEntry } from '../store/ai'
 import { ActivityPanel } from './ChatActivity'
@@ -132,28 +138,133 @@ function ToolEventItem({ entry }: { entry: ToolEventEntry }) {
   )
 }
 
+/* ------------------------------ message actions ----------------------------- */
+
+function copyText(text: string): void {
+  void navigator.clipboard.writeText(text)
+  useAppStore.getState().toast({ kind: 'success', title: 'Copied', duration: 1200 })
+}
+
+interface MessageActions {
+  /** Last assistant reply, and no reply is streaming. */
+  canRegenerate: boolean
+  /** Last user message, and no reply is streaming. */
+  canEdit: boolean
+  onRegenerate(): void
+  onEdit(id: string, text: string): void
+  openSettings(): void
+}
+
+/** Hover-revealed row of message actions (keyboard reachable via focus-within). */
+function MessageToolbar({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mt-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      {children}
+    </div>
+  )
+}
+
 /* --------------------------------- message ---------------------------------- */
 
-function MessageView({ message }: { message: ChatMessage }) {
+function MessageView({ message, actions }: { message: ChatMessage; actions: MessageActions }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+
   if (message.role === 'user') {
+    // The attached selection travels inside the message; show it as a chip, not raw text.
+    const split = message.content.indexOf('\n\n<attached-selection')
+    const visible = split >= 0 ? message.content.slice(0, split) : message.content
+    const attachLabel = /label="([^"]*)"/.exec(message.content)?.[1]
+    const save = () => {
+      const t = draft.trim()
+      if (!t) return
+      setEditing(false)
+      actions.onEdit(message.id, t)
+    }
     return (
-      <div className="msg user">
+      <div className="msg user group">
         <div className="msg-avatar">You</div>
-        <div className="msg-body">{message.content}</div>
+        <div className="msg-body">
+          {editing ? (
+            <div className="flex flex-col gap-1.5">
+              <textarea
+                autoFocus
+                className="field-input !text-xs resize-none"
+                rows={3}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setEditing(false)
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) save()
+                }}
+              />
+              <div className="flex justify-end gap-1.5">
+                <button className="btn !py-0.5 !px-2 text-[10px]" onClick={() => setEditing(false)}>
+                  Cancel
+                </button>
+                <button className="btn btn-primary !py-0.5 !px-2 text-[10px]" onClick={save}>
+                  Save &amp; resend
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="whitespace-pre-wrap break-words">{visible}</div>
+              {attachLabel && (
+                <div className="mt-1 inline-flex items-center gap-1 rounded border border-[var(--border-soft)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-faint)]">
+                  <Paperclip size={10} />
+                  {attachLabel}
+                </div>
+              )}
+              <MessageToolbar>
+                <IconButton icon={Copy} size={12} tooltip="Copy message" onClick={() => copyText(visible)} />
+                {actions.canEdit && (
+                  <IconButton
+                    icon={PencilLine}
+                    size={12}
+                    tooltip="Edit and resend"
+                    onClick={() => {
+                      setDraft(visible)
+                      setEditing(true)
+                    }}
+                  />
+                )}
+              </MessageToolbar>
+            </>
+          )}
+        </div>
       </div>
     )
   }
+
+  const done = !message.pending
   return (
-    <div className="msg assistant">
+    <div className="msg assistant group">
       <div className="msg-avatar">
         <Sparkles size={13} />
       </div>
       <div className="msg-body">
         {message.activity && <ActivityPanel message={message} />}
         {message.error && (
-          <div className="mb-2 flex items-start gap-2 rounded-lg border border-[#5a2a35] bg-[#2a1218] p-2.5 text-xs text-[var(--red)]">
-            <AlertTriangle size={13} className="shrink-0 mt-0.5" />
-            <span className="break-words">{message.error}</span>
+          <div className="mb-2 rounded-lg border border-[#5a2a35] bg-[#2a1218] p-2.5 text-xs text-[var(--red)]">
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+              <span className="break-words">{message.error}</span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {actions.canRegenerate && (
+                <button className="btn !py-0.5 !px-2 text-[10px]" onClick={actions.onRegenerate}>
+                  <RotateCw size={11} />
+                  Retry
+                </button>
+              )}
+              {/No AI model configured/.test(message.error) && (
+                <button className="btn !py-0.5 !px-2 text-[10px]" onClick={actions.openSettings}>
+                  <Settings size={11} />
+                  Open settings
+                </button>
+              )}
+            </div>
           </div>
         )}
         {message.toolEvents && message.toolEvents.length > 0 && (
@@ -164,12 +275,22 @@ function MessageView({ message }: { message: ChatMessage }) {
           </div>
         )}
         {message.content && <Markdown text={message.content} streaming={message.pending} />}
-        {!message.content && message.pending && (
+        {!message.content && message.pending && !message.activity && (
           <div className="flex items-center gap-1.5 py-1">
             <span className="typing-dot" />
             <span className="typing-dot" />
             <span className="typing-dot" />
           </div>
+        )}
+        {done && (message.content || message.error) && (
+          <MessageToolbar>
+            {message.content && (
+              <IconButton icon={Copy} size={12} tooltip="Copy reply" onClick={() => copyText(message.content)} />
+            )}
+            {actions.canRegenerate && (
+              <IconButton icon={RotateCw} size={12} tooltip="Regenerate reply" onClick={actions.onRegenerate} />
+            )}
+          </MessageToolbar>
         )}
       </div>
     </div>
@@ -291,6 +412,11 @@ const SUGGESTIONS = [
   },
 ]
 
+type Menu =
+  | { kind: 'slash'; items: SlashCommand[] }
+  | { kind: 'mention'; items: string[] }
+  | null
+
 /* ---------------------------------- panel ----------------------------------- */
 
 export function ChatPanel() {
@@ -299,9 +425,14 @@ export function ChatPanel() {
   const streaming = useAIStore((s) => s.streaming)
   const attach = useAIStore((s) => s.attach)
   const ai = useAIStore()
+  const folder = useAppStore((s) => s.folder)
   const session = sessions.find((s) => s.id === activeId) || null
 
   const [text, setText] = useState('')
+  const [menuIndex, setMenuIndex] = useState(0)
+  const [menuDismissed, setMenuDismissed] = useState(false)
+  const [mention, setMention] = useState<MentionMatch | null>(null)
+  const [mentionFiles, setMentionFiles] = useState<string[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -317,12 +448,95 @@ export function ChatPanel() {
     if (el) el.scrollTop = el.scrollHeight
   }, [session?.messages, streaming])
 
+  // Ctrl+Alt+L (and the palette) focus the composer.
+  useEffect(() => {
+    const focus = () => inputRef.current?.focus()
+    window.addEventListener('kinetic:focus-chat', focus)
+    return () => window.removeEventListener('kinetic:focus-chat', focus)
+  }, [])
+
+  /* ---- composer menus: slash commands and @file mentions ---- */
+
+  const slash = slashQuery(text)
+  let menu: Menu = null
+  if (!menuDismissed) {
+    if (slash !== null) {
+      const items = filterSlash(slash)
+      if (items.length) menu = { kind: 'slash', items }
+    } else if (mention) {
+      const items = rankFiles(mentionFiles, mention.query)
+      if (items.length) menu = { kind: 'mention', items }
+    }
+  }
+  const menuLength = menu ? menu.items.length : 0
+  const safeIndex = Math.min(menuIndex, Math.max(0, menuLength - 1))
+
+  const acceptMenu = (i: number) => {
+    if (!menu) return
+    if (menu.kind === 'slash') {
+      const cmd = menu.items[i]
+      if (cmd.action === 'clear') {
+        setText('')
+        ai.clearActive()
+        return
+      }
+      setText(`/${cmd.name} `)
+      setMenuDismissed(false)
+    } else if (mention) {
+      const r = insertMention(text, mention, menu.items[i])
+      setText(r.text)
+      setMention(null)
+      requestAnimationFrame(() => inputRef.current?.setSelectionRange(r.caret, r.caret))
+    }
+    setMenuIndex(0)
+  }
+
+  const onTextChange = (value: string, caret: number) => {
+    setText(value)
+    setMenuIndex(0)
+    setMenuDismissed(false)
+    const m = activeMention(value, caret)
+    setMention(m)
+    if (m && folder) void loadMentionFiles(folder).then(setMentionFiles)
+  }
+
   const send = () => {
     const t = text.trim()
     if (!t || streaming) return
     setText('')
-    void ai.send(t)
+    setMention(null)
+    const expansion = expandSlash(t)
+    if (expansion?.kind === 'clear') {
+      ai.clearActive()
+      return
+    }
+    let prompt = t
+    if (expansion?.kind === 'prompt') {
+      prompt = expansion.text
+      // Commands about code use the selection, or the open file, when nothing is attached.
+      if (expansion.needsCode && !useAIStore.getState().attach) {
+        const code = currentCodeAttachment()
+        if (code) useAIStore.getState().setAttach(code)
+      }
+    }
+    void ai.send(prompt)
   }
+
+  const actions: MessageActions = {
+    canRegenerate: !streaming,
+    canEdit: !streaming,
+    onRegenerate: () => void ai.regenerate(),
+    onEdit: (id, value) => void ai.editAndResend(id, value),
+    openSettings: () => useAppStore.getState().setSidebarView('settings'),
+  }
+  // Only the newest user message is editable and only the newest reply can be regenerated.
+  const messages = session?.messages || []
+  let lastUser = -1
+  let lastAssistant = -1
+  messages.forEach((m, i) => {
+    if (m.role === 'user') lastUser = i
+    if (m.role === 'assistant') lastAssistant = i
+  })
 
   const historyItems: MenuItem[] = [
     ...sessions.map((s) => ({
@@ -410,17 +624,77 @@ export function ChatPanel() {
                 </button>
               ))}
             </div>
+            <div className="px-3 pb-3 text-[10px] leading-relaxed text-[var(--text-faint)]">
+              Tip: type <span className="font-mono text-[var(--text-dim)]">/</span> for commands
+              (<span className="font-mono">/review</span>, <span className="font-mono">/tests</span>…) and{' '}
+              <span className="font-mono text-[var(--text-dim)]">@</span> to attach a project file.
+            </div>
           </div>
         ) : (
           <div className="pb-2">
-            {session.messages.map((m) => (
-              <MessageView key={m.id} message={m} />
+            {messages.map((m, i) => (
+              <MessageView
+                key={m.id}
+                message={m}
+                actions={{
+                  ...actions,
+                  canRegenerate: actions.canRegenerate && i === lastAssistant,
+                  canEdit: actions.canEdit && i === lastUser,
+                }}
+              />
             ))}
           </div>
         )}
       </div>
 
-      <div className="border-t border-[var(--border-soft)] p-2 flex flex-col gap-1.5">
+      <div className="relative border-t border-[var(--border-soft)] p-2 flex flex-col gap-1.5">
+        {menu && (
+          <div
+            role="listbox"
+            className="absolute bottom-full left-2 right-2 mb-1 max-h-60 overflow-auto rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] p-1 shadow-xl z-10"
+          >
+            {menu.kind === 'slash'
+              ? menu.items.map((c, i) => (
+                  <button
+                    key={c.name}
+                    role="option"
+                    aria-selected={i === safeIndex}
+                    onMouseEnter={() => setMenuIndex(i)}
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      acceptMenu(i)
+                    }}
+                    className={cn(
+                      'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs',
+                      i === safeIndex ? 'bg-[var(--bg-active)] text-[var(--text)]' : 'text-[var(--text-dim)]',
+                    )}
+                  >
+                    <span className="font-mono text-[var(--accent)]">/{c.name}</span>
+                    <span className="truncate text-[var(--text-faint)]">{c.hint}</span>
+                  </button>
+                ))
+              : menu.items.map((f, i) => (
+                  <button
+                    key={f}
+                    role="option"
+                    aria-selected={i === safeIndex}
+                    onMouseEnter={() => setMenuIndex(i)}
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      acceptMenu(i)
+                    }}
+                    className={cn(
+                      'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs',
+                      i === safeIndex ? 'bg-[var(--bg-active)] text-[var(--text)]' : 'text-[var(--text-dim)]',
+                    )}
+                  >
+                    <FileCode size={12} className="shrink-0 text-[var(--accent)]" />
+                    <span className="truncate">{basename(f)}</span>
+                    <span className="truncate text-[var(--text-faint)] text-[10px]">{f}</span>
+                  </button>
+                ))}
+          </div>
+        )}
         {attach && (
           <div className="flex items-center gap-2 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-elev)] px-2 py-1.5 text-[11px] text-[var(--text-dim)]">
             <FileCode size={12} className="shrink-0 text-[var(--accent)]" />
@@ -445,14 +719,37 @@ export function ChatPanel() {
             ref={inputRef}
             className="field-input flex-1 !py-1.5 !text-xs resize-none"
             rows={2}
+            aria-label="Message the AI"
             placeholder={
               session?.mode === 'agent'
                 ? 'Ask the agent to build, fix or explore…'
                 : 'Ask Kineticut AI anything…'
             }
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => onTextChange(e.target.value, e.target.selectionStart ?? e.target.value.length)}
             onKeyDown={(e) => {
+              if (menu) {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  setMenuIndex((safeIndex + 1) % menuLength)
+                  return
+                }
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  setMenuIndex((safeIndex - 1 + menuLength) % menuLength)
+                  return
+                }
+                if (e.key === 'Enter' || e.key === 'Tab') {
+                  e.preventDefault()
+                  acceptMenu(safeIndex)
+                  return
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault()
+                  setMenuDismissed(true)
+                  return
+                }
+              }
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
                 send()
@@ -472,7 +769,8 @@ export function ChatPanel() {
           )}
         </div>
         <div className="text-[9.5px] text-[var(--text-faint)] px-0.5">
-          Enter to send · Shift+Enter for newline ·{' '}
+          Enter to send · Shift+Enter for newline · <span className="font-mono">/</span> commands ·{' '}
+          <span className="font-mono">@</span> files ·{' '}
           {session?.mode === 'agent' ? 'Agent may propose file edits & run commands (with approval)' : 'Markdown supported'}
         </div>
       </div>

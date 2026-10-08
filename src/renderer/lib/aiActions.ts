@@ -257,6 +257,30 @@ export function attachSelectionToChat(): void {
   app.setSidebarView('chat')
 }
 
+/**
+ * The code the user is looking at: the highlighted selection if there is one,
+ * otherwise the whole active file (for commands like "/review" typed without a
+ * selection). Null when no editor or no code is open.
+ */
+export function currentCodeAttachment(): { path: string; label: string; text: string } | null {
+  const editor = editorRef.current
+  if (!editor) return null
+  const model = editor.getModel()
+  if (!model) return null
+  const path = model.uri.scheme === 'file' ? model.uri.fsPath : model.uri.path
+  const selection = editor.getSelection()
+  if (selection && !selection.isEmpty()) {
+    return {
+      path,
+      label: `${basename(path)}:${selection.startLineNumber}-${selection.endLineNumber}`,
+      text: model.getValueInRange(selection),
+    }
+  }
+  const text = model.getValue()
+  if (!text.trim()) return null
+  return { path, label: basename(path), text: text.slice(0, 12000) }
+}
+
 export function triggerInlineCompletion(): void {
   const editor = editorRef.current
   if (!editor) return
