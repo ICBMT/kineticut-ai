@@ -993,6 +993,21 @@ button {
   padding: 1px 5px;
   border-radius: 5px;
 }
+/* A file the answer names: looks like code, behaves like a link. */
+.prose-chat code.file-link {
+  cursor: pointer;
+  color: var(--accent);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.prose-chat code.file-link:hover {
+  background: var(--bg-hover);
+  text-decoration-style: solid;
+}
+.prose-chat code.file-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 .prose-chat pre.code-block {
   position: relative;
   background: #0a0a12;

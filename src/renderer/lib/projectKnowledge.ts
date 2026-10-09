@@ -195,6 +195,8 @@ export interface RelevantHit {
   entry: ProjectIndexEntry
   score: number
   includeContent: boolean
+  /** Set when the file was pulled in because it is imported by / imports this file. */
+  via?: string
 }
 
 function queryTokens(query: string): string[] {
@@ -217,6 +219,18 @@ const STOPWORDS = new Set([
 
 function meaningfulTokens(query: string): string[] {
   return queryTokens(query).filter((t) => t.length > 3 && !STOPWORDS.has(t))
+}
+
+/** Quoted phrases ("the retry helper") are the strongest signal a question can give. */
+function quotedPhrases(query: string): string[] {
+  const out: string[] = []
+  const re = /["'`]([^"'`]{3,60})["'`]/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(query))) {
+    const phrase = m[1].trim().toLowerCase()
+    if (phrase) out.push(phrase)
+  }
+  return out
 }
 
 /** Find a file explicitly named in the query (path-like token). */
@@ -243,12 +257,17 @@ export function retrieveRelevantFiles(entries: ProjectIndexEntry[], query: strin
   if (tokens.length === 0) return []
   const keywords = meaningfulTokens(query)
   const mentioned = findMentionedFile(query, entries)
+  const phrases = quotedPhrases(query)
   const hits: RelevantHit[] = []
 
   for (const entry of entries) {
     let score = 0
     const pathScore = fuzzyScore(query, entry.rel)
     if (pathScore !== null) score += pathScore
+    if (phrases.length) {
+      const haystack = `${entry.rel} ${entry.summary ?? ''} ${entry.symbols.join(' ')}`.toLowerCase()
+      for (const phrase of phrases) if (haystack.includes(phrase)) score += 45
+    }
     const base = entry.rel.split('/').pop() || ''
     if (keywords.some((t) => base.toLowerCase().includes(t))) score += 40
     let symbolScore = 0
@@ -270,6 +289,114 @@ export function retrieveRelevantFiles(entries: ProjectIndexEntry[], query: strin
     }
   }
   return hits.sort((a, b) => b.score - a.score).slice(0, Math.max(k, mentioned ? k + 1 : k))
+}
+
+/* ------------------------------ relationships ------------------------------ */
+
+/** Extensions tried when an import like `./ipc` or `./ipc.js` is resolved to a file. */
+const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
+
+/**
+ * Resolve a relative import (`../lib/utils`, `./ipc.js`) written in `fromRel`
+ * to the indexed file it points at. Bare package names resolve to nothing: the
+ * graph only holds the project's own files.
+ */
+export function resolveImport(fromRel: string, spec: string, byRel: Map<string, ProjectIndexEntry>): string | null {
+  if (!spec.startsWith('.')) return null
+  const dir = fromRel.includes('/') ? fromRel.slice(0, fromRel.lastIndexOf('/')).split('/') : []
+  const out: string[] = []
+  for (const part of [...dir, ...spec.split('/')]) {
+    if (part === '' || part === '.') continue
+    if (part === '..') out.pop()
+    else out.push(part)
+  }
+  const base = out.join('/')
+  // TypeScript sources are often imported with a .js extension.
+  const stripped = base.replace(/\.(m|c)?jsx?$/, '')
+  const roots = stripped !== base ? [stripped, base] : [base]
+  for (const root of roots) {
+    const candidates = [
+      root,
+      ...SOURCE_EXTENSIONS.map((ext) => root + ext),
+      ...SOURCE_EXTENSIONS.map((ext) => `${root}/index${ext}`),
+    ]
+    for (const candidate of candidates) if (byRel.has(candidate) && candidate !== fromRel) return candidate
+  }
+  return null
+}
+
+export interface FileRelations {
+  byRel: Map<string, ProjectIndexEntry>
+  /** file → the project files it imports */
+  imports: Map<string, string[]>
+  /** file → the project files that import it */
+  importedBy: Map<string, string[]>
+}
+
+const relationCache = new WeakMap<ProjectIndexEntry[], FileRelations>()
+
+/** The import graph of the project, built once per snapshot. */
+export function buildRelations(entries: ProjectIndexEntry[]): FileRelations {
+  const cached = relationCache.get(entries)
+  if (cached) return cached
+  const byRel = new Map(entries.map((e) => [e.rel, e]))
+  const imports = new Map<string, string[]>()
+  const importedBy = new Map<string, string[]>()
+  for (const entry of entries) {
+    if (!entry.imports?.length) continue
+    const targets: string[] = []
+    for (const spec of entry.imports) {
+      const target = resolveImport(entry.rel, spec, byRel)
+      if (target && !targets.includes(target)) targets.push(target)
+    }
+    if (targets.length === 0) continue
+    imports.set(entry.rel, targets)
+    for (const target of targets) {
+      const list = importedBy.get(target) ?? []
+      list.push(entry.rel)
+      importedBy.set(target, list)
+    }
+  }
+  const relations = { byRel, imports, importedBy }
+  relationCache.set(entries, relations)
+  return relations
+}
+
+/**
+ * Graph-first expansion: the files the top hits import or are imported by are
+ * the usual next thing a question needs ("what calls X" is answered by who imports X).
+ */
+export function expandWithRelations(hits: RelevantHit[], entries: ProjectIndexEntry[], extra = 3): RelevantHit[] {
+  if (hits.length === 0) return hits
+  const relations = buildRelations(entries)
+  const seen = new Set(hits.map((h) => h.entry.rel))
+  const out = [...hits]
+  for (const hit of hits.slice(0, 2)) {
+    const neighbours = [...(relations.imports.get(hit.entry.rel) ?? []), ...(relations.importedBy.get(hit.entry.rel) ?? [])]
+    for (const rel of neighbours) {
+      if (out.length >= hits.length + extra) break
+      if (seen.has(rel)) continue
+      const entry = relations.byRel.get(rel)
+      if (!entry) continue
+      seen.add(rel)
+      out.push({ entry, score: hit.score * 0.5, includeContent: false, via: hit.entry.rel })
+    }
+  }
+  return out
+}
+
+/** One line per file in the set: what it imports and what imports it, inside the set or out. */
+export function relationLines(entries: ProjectIndexEntry[], rels: string[], limit = 16): string[] {
+  const relations = buildRelations(entries)
+  const lines: string[] = []
+  for (const rel of rels) {
+    const imports = (relations.imports.get(rel) ?? []).slice(0, 6)
+    const importedBy = (relations.importedBy.get(rel) ?? []).slice(0, 6)
+    if (imports.length) lines.push(`- ${rel} imports ${imports.join(', ')}`)
+    if (importedBy.length) lines.push(`- ${rel} is imported by ${importedBy.join(', ')}`)
+    if (lines.length >= limit) break
+  }
+  return lines.slice(0, limit)
 }
 
 /** Does the question ask about the project/app itself rather than its code? */
@@ -327,16 +454,19 @@ export async function retrieveContextForQuery(query: string, k = 5): Promise<Kno
     return { block: header.join('\n'), files: [] }
   }
 
-  const hits = retrieveRelevantFiles(entries, query, k)
+  const hits = expandWithRelations(retrieveRelevantFiles(entries, query, k), entries)
   const files = hits.map((h) => h.entry.rel)
   const lines = hits.map((h) => {
     const syms = h.entry.symbols.length ? ` [${h.entry.symbols.slice(0, 6).join(', ')}]` : ''
     const summary = h.entry.summary ? `: ${h.entry.summary.slice(0, 140)}` : ''
-    return `- ${h.entry.rel} (${h.entry.language})${summary}${syms}`
+    const via = h.via ? ` — connected to ${h.via}` : ''
+    return `- ${h.entry.rel} (${h.entry.language})${summary}${syms}${via}`
   })
 
   let block = `${header.join('\n')}\n\n`
   block += `Relevant files from the project memory (${entries.length} files in ${folder}):\n${lines.join('\n')}`
+  const related = relationLines(entries, files)
+  if (related.length) block += `\n\nHow these files are connected (from their imports):\n${related.join('\n')}`
 
   const mentioned = findMentionedFile(query, entries)
   if (mentioned) {

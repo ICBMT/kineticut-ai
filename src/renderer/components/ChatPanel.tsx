@@ -29,6 +29,7 @@ import {
 import { renderMarkdown } from '../lib/markdown'
 import { buildUnderstanding, useKnowledgeStore } from '../lib/projectKnowledge'
 import { refreshProjectBrief } from '../lib/projectBrief'
+import { openFileLink, resolveFileLink } from '../lib/fileLinks'
 import { cn, basename } from '../lib/utils'
 import { editorRef } from '../lib/editorRef'
 import { attachSelectionToChat, currentCodeAttachment } from '../lib/aiActions'
@@ -45,6 +46,30 @@ import { EmptyState, IconButton, Segmented, Spinner } from './ui'
 function Markdown({ text, streaming }: { text: string; streaming?: boolean }) {
   const html = useMemo(() => renderMarkdown(text), [text])
   const ref = useRef<HTMLDivElement>(null)
+  // The file tree arrives after the first answer sometimes; re-link when it does.
+  const fileIndex = useAppStore((s) => s.fileIndex)
+
+  // Inline code that names a project file opens it: the answer can be checked
+  // against the code it came from.
+  useEffect(() => {
+    const root = ref.current
+    if (!root) return
+    root.querySelectorAll('code').forEach((code) => {
+      if (code.closest('pre') || code.dataset.fileLink === '1') return
+      const abs = resolveFileLink(code.textContent || '')
+      if (!abs) return
+      code.dataset.fileLink = '1'
+      code.classList.add('file-link')
+      code.setAttribute('role', 'button')
+      code.setAttribute('tabindex', '0')
+      code.title = `Open ${abs}`
+      const open = () => openFileLink(abs)
+      code.addEventListener('click', open)
+      code.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') open()
+      })
+    })
+  }, [html, fileIndex])
 
   useEffect(() => {
     const root = ref.current

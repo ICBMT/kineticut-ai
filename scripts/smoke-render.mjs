@@ -549,6 +549,7 @@ async function main() {
   let purposeOk = false
   let metaQueryOk = false
   let recallOk = false
+  let connectOk = false
   try {
     const knowledge = await server.ssrLoadModule('/lib/projectKnowledge.ts')
     await knowledge.buildUnderstanding({ maxFiles: 8 })
@@ -590,6 +591,14 @@ async function main() {
     const recPath = await knowledge.recallFile(REPO, 'src/renderer/App.tsx')
     const recName = await knowledge.recallFile(REPO, 'ipc.ts')
     const recMiss = await knowledge.recallFile(REPO, 'src/does/not/exist.ts')
+    // Relationships: relative imports resolve to project files (incl. .js → .ts and index files).
+    const byRel = new Map(entries.map((e) => [e.rel, e]))
+    connectOk =
+      knowledge.resolveImport('src/renderer/App.tsx', './components/ShortcutsModal', byRel) ===
+        'src/renderer/components/ShortcutsModal.tsx' &&
+      knowledge.resolveImport('src/renderer/lib/x.ts', '../store/app.js', byRel) === 'src/renderer/store/app.ts' &&
+      knowledge.resolveImport('src/renderer/App.tsx', 'react', byRel) === null &&
+      knowledge.relationLines(entries, ['src/renderer/App.tsx']).length > 0
     recallOk =
       recPath.ok &&
       recPath.file.content.includes('export function App') &&
@@ -625,6 +634,7 @@ async function main() {
   checks.push(['retrieval surfaces the right files for a question', retrievalOk])
   checks.push(['code profile detected (TypeScript / Electron)', infraOk])
   checks.push(['every file retrievable from memory (by path or name, misses reported)', recallOk])
+  checks.push(['connections: relative imports resolve to project files and relationships are listed', connectOk])
   checks.push(['explicit file mention resolves for content injection', mentionOk])
   checks.push(['knowledge context block built for chat prompts', contextBlockOk])
   checks.push(['project index derives the app purpose (optimized, no AI)', purposeOk])
