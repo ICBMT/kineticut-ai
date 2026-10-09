@@ -11,8 +11,10 @@ models via **Ollama**, frontier models (Claude, GPT, Gemini, …) via API. Built
 ## Features
 
 - **AI Chat & Agent** — streaming chat with markdown + syntax highlighting; an
-  *Agent mode* that reads/searches your workspace, proposes file edits (reviewed in
-  a side-by-side diff), and runs commands (with confirmation). Works with Ollama
+  *Agent mode* that reads/searches your workspace, builds features by creating new
+  files and making exact-text edits to existing ones (`create_file`, `edit_file`),
+  and runs commands (with confirmation). Every write is reviewed in a side-by-side
+  diff, where you can adjust the proposal before applying it. Works with Ollama
   locally and OpenAI-compatible / Anthropic / Gemini APIs.
 - **Starts empty, remembers everything.** Kineticut opens with no folder and no file;
   you choose what to work on. Your projects and chats are kept: **Projects & Chats**
