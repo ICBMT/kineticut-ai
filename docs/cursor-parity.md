@@ -20,7 +20,7 @@ the fallback.
 | 2 | Ignore files (`.gitignore`, `.cursorignore`) | Done for indexing and search. `.cursorignore` does not block explicit `read_file`. | `src/shared/ignoreRules.mjs` |
 | 3 | Agent tools: codebase search, grep, file search, read with line ranges, list dir | Done | `src/renderer/ai/agent.ts` |
 | 4 | Agent tools: create, edit, write, run command with approval | Done | `src/renderer/ai/agent.ts` |
-| 5 | Agent tools: delete and rename files | Missing | — |
+| 5 | Agent tools: delete and rename files | Done. Both ask for confirmation, refuse binary files and files with staged review changes, and are undoable from the chat (a rename is a delete plus a create). | `src/renderer/ai/agent.ts` (`delete_file`, `rename_file`, `removable`), `lib/checkpoints.ts` |
 | 6 | Agent tools: web search and docs | Missing | — |
 | 7 | Modes: Agent and Ask | Done as Agent and Chat, switched from the composer footer. Manual mode missing. | `src/renderer/store/ai.ts`, `components/ChatPanel.tsx` |
 | 8 | Composer context: @Codebase, @files, @folders, @symbols, shown as removable chips | Done | `src/renderer/lib/mentions*.ts`, `components/ChatPanel.tsx` (`ComposerChips`) |

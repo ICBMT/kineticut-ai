@@ -192,7 +192,8 @@ function ChangeCard({ sessionId, message }: { sessionId: string; message: ChatMe
       <ul className="change-card-list">
         {changes.map((c) => {
           const state = CHANGE_STATE[c.status]
-          const openable = c.status !== 'reverted' || c.before !== null
+          const gone = c.deleted === true && c.status === 'applied'
+          const openable = !gone && (c.status !== 'reverted' || c.before !== null)
           return (
             <li key={c.path}>
               <button
@@ -202,7 +203,9 @@ function ChangeCard({ sessionId, message }: { sessionId: string; message: ChatMe
                 onClick={() => openFileLink(c.path)}
               >
                 <span className="font-mono">{rel(c.path)}</span>
-                <span className="change-card-kind">{c.before === null && !c.tooLarge ? 'new' : 'edited'}</span>
+                <span className="change-card-kind">
+                  {c.deleted ? 'deleted' : c.before === null && !c.tooLarge ? 'new' : 'edited'}
+                </span>
               </button>
               {state.text && <span className={cn('change-card-state', state.tone)}>{state.text}</span>}
             </li>

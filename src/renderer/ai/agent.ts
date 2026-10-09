@@ -106,6 +106,31 @@ export const AGENT_TOOLS: AIToolDef[] = [
     },
   },
   {
+    name: 'delete_file',
+    description:
+      'Delete a text file in the workspace. The user is asked to confirm first. Use only when the user asked for the removal or it is clearly part of the task.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path or path relative to the workspace root.' },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'rename_file',
+    description:
+      'Move or rename a text file. Fails if the destination exists. Imports and references elsewhere are not updated automatically: find them with grep_search and edit them.',
+    parameters: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', description: 'Current path (absolute or relative to the workspace root).' },
+        to: { type: 'string', description: 'New path (absolute or relative to the workspace root).' },
+      },
+      required: ['from', 'to'],
+    },
+  },
+  {
     name: 'create_file',
     description:
       'Create a new file (parent folders are created). Fails if the file already exists: use edit_file to change an existing file. The user reviews the new file before it is written.',
@@ -184,6 +209,7 @@ You know this project: its purpose, stack, directory map, relevant files and how
 How to work:
 - Understand before you change. Use the project context, project_map, codebase_search and grep_search to find the code that already does something similar, and follow its pattern (naming, folder layout, how it is registered or wired up).
 - To build a feature: plan the files in one short list, create the new files with create_file, then wire them into the existing code (routes, registries, imports, menus, commands) with edit_file.
+- To delete or rename a file, use delete_file or rename_file, then find and update references with grep_search and edit_file.
 - To change an existing file, use edit_file with old_text copied exactly from the file. Keep old_text small but unique. Use write_file only for a small file or a full rewrite. Never guess file contents: recall_file or read_file first.
 - To find code, call codebase_search first (it searches the whole project by meaning and keywords), then read only the lines you need with read_file start_line/end_line. Use grep_search for exact text and file_search to find a file by name.
 - The user reviews every change. A write is either shown in a diff at once, or "staged" for one review at the end (the tool result says which). Staged changes are not on disk yet, but later reads and edits see them. If the user rejects a change, do not repeat it: explain the change and ask how to proceed.
@@ -196,10 +222,11 @@ export type AgentToolEvent =
   | { type: 'tool_end'; call: AIToolCall; result: string; error?: boolean }
 
 /** One file the agent actually wrote. `before` is null when the file was created. */
+/** A file change the agent made. `after: null` means the file was deleted. */
 export interface AgentWrite {
   path: string
   before: string | null
-  after: string
+  after: string | null
 }
 
 export interface AgentRunArgs {
@@ -426,6 +453,49 @@ async function executeToolCall(
         }
         return proposeWrite(target, '', null, String(args.content ?? ''), 'Agent wants to create a file', ctx)
       }
+      case 'delete_file': {
+        const target = resolvePath(args.path)
+        const check = await removable(target)
+        if (!check.ok) return { result: check.error, error: true }
+        const ok = await new Promise<boolean>((resolve) => {
+          app.requestConfirm({
+            title: 'Delete file',
+            message: displayPath(target),
+            detail: 'The AI agent wants to delete this file. Undo in the chat can restore it.',
+            confirmLabel: 'Delete',
+            resolve,
+          })
+        })
+        if (!ok) return { result: 'The user rejected deleting this file.', error: true }
+        await api.fs.remove(target)
+        ctx.onWrite?.({ path: target, before: check.content, after: null })
+        return { result: `Deleted ${displayPath(target)}` }
+      }
+      case 'rename_file': {
+        const from = resolvePath(args.from)
+        const to = resolvePath(args.to)
+        const check = await removable(from)
+        if (!check.ok) return { result: check.error, error: true }
+        if ((await readCurrent(to, true)) !== null) {
+          return { result: `Error: ${args.to} already exists. Choose another name.`, error: true }
+        }
+        if (!useSettingsStore.getState().agentAutoApprove) {
+          const ok = await new Promise<boolean>((resolve) => {
+            app.requestConfirm({
+              title: 'Rename file',
+              message: `${displayPath(from)} → ${displayPath(to)}`,
+              detail: 'The AI agent wants to move this file.',
+              confirmLabel: 'Rename',
+              resolve,
+            })
+          })
+          if (!ok) return { result: 'The user rejected this rename.', error: true }
+        }
+        await api.fs.rename(from, to)
+        ctx.onWrite?.({ path: from, before: check.content, after: null })
+        ctx.onWrite?.({ path: to, before: null, after: check.content })
+        return { result: `Renamed ${displayPath(from)} to ${displayPath(to)}` }
+      }
       case 'run_command': {
         const command = String(args.command || '')
         const settings = useSettingsStore.getState()
@@ -507,6 +577,25 @@ async function executeToolCall(
  * The current text of a file, or '' (or null with `missingAsNull`) when it does
  * not exist yet. Binary files read as empty text: the agent cannot edit them.
  */
+/**
+ * Whether a file can be deleted or renamed and still be undone: it must exist,
+ * be text (binary content cannot be stored for undo), and have no staged review change.
+ */
+async function removable(target: string): Promise<{ ok: true; content: string } | { ok: false; error: string }> {
+  if (stagedContent(target) !== undefined) {
+    return { ok: false, error: `Error: ${displayPath(target)} has changes waiting in the review. Resolve them first.` }
+  }
+  try {
+    const res = await api.fs.read(target)
+    if (res.binary) {
+      return { ok: false, error: `Error: ${displayPath(target)} is a binary file. Ask the user to remove it by hand.` }
+    }
+    return { ok: true, content: res.content }
+  } catch {
+    return { ok: false, error: `Error: ${displayPath(target)} does not exist.` }
+  }
+}
+
 async function readCurrent(target: string, missingAsNull = false): Promise<string | null> {
   // A file the agent already changed in this review reads as its staged text.
   const staged = stagedContent(target)

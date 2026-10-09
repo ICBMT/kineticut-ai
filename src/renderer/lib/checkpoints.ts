@@ -20,6 +20,8 @@ export interface FileChange {
   status: ChangeStatus
   /** Set when the content was too large to store; such a change can only be reported. */
   tooLarge?: boolean
+  /** The agent deleted the file. `before` holds what it was; undo restores it. */
+  deleted?: boolean
   at: number
 }
 
@@ -40,16 +42,18 @@ export function hashContent(text: string): string {
  */
 export function recordWrite(
   changes: FileChange[],
-  write: { path: string; before: string | null; after: string },
+  write: { path: string; before: string | null; after: string | null },
   at = Date.now(),
 ): FileChange[] {
   const existing = changes.find((c) => c.path === write.path)
   const tooLarge = write.before !== null && write.before.length > MAX_CHECKPOINT_CHARS
+  const after = write.after ?? ''
   const base = {
-    afterHash: hashContent(write.after),
-    afterLength: write.after.length,
+    afterHash: hashContent(after),
+    afterLength: after.length,
     status: 'applied' as const,
     at,
+    deleted: write.after === null,
   }
   if (existing) {
     return changes.map((c) =>
@@ -98,6 +102,15 @@ export function planUndo(
       continue
     }
     const now = currentContent(change.path)
+    if (change.deleted) {
+      // Undo brings the file back only while it is still missing.
+      if (now === null && change.before !== null) {
+        plan.ops.push({ change, op: { kind: 'restore', path: change.path, content: change.before } })
+      } else {
+        plan.kept.push(change)
+      }
+      continue
+    }
     const stillAgentVersion =
       now !== null && now.length === change.afterLength && hashContent(now) === change.afterHash
     const createdAndGone = change.before === null && now === null

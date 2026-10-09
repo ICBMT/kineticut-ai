@@ -115,7 +115,7 @@ interface AIState {
   /** Replace a user message's text and re-answer from there. */
   editAndResend(messageId: string, text: string): Promise<void>
   /** Record a file the agent wrote, so the turn can be undone. */
-  recordAgentWrite(sessionId: string, messageId: string, write: { path: string; before: string | null; after: string }): void
+  recordAgentWrite(sessionId: string, messageId: string, write: { path: string; before: string | null; after: string | null }): void
   /** Undo every change an agent turn made, leaving files the user has since edited alone. */
   revertChanges(sessionId: string, messageId: string): Promise<void>
   /** Stream one assistant reply into `assistantId` for `query`. */

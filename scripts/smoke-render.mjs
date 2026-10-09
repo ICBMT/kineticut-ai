@@ -857,6 +857,21 @@ async function main() {
     const unavailableOk = bigPlan.unavailable.length === 1 && bigPlan.ops.length === 0
     const summaryOk = cp.describeChanges(changes) === '2 files: 1 edited, 1 created'
     const hashOk = cp.hashContent('abc') === cp.hashContent('abc') && cp.hashContent('abc') !== cp.hashContent('abd')
+    // Deletes: undo brings the file back only while it is still missing.
+    const del = cp.recordWrite([], { path: '/p/gone.ts', before: 'keep me', after: null }, 5)
+    const delPlan = cp.planUndo(del, () => null)
+    const deleteOk =
+      delPlan.ops.length === 1 && delPlan.ops[0].op.kind === 'restore' && delPlan.ops[0].op.content === 'keep me' &&
+      cp.planUndo(del, () => 'user recreated it').kept.length === 1
+    // Renames are a delete plus a create: undo removes the new name, then restores the old one.
+    const moved = cp.recordWrite(
+      cp.recordWrite([], { path: '/p/old.ts', before: 'body', after: null }, 6),
+      { path: '/p/new.ts', before: null, after: 'body' },
+      7,
+    )
+    const renameOk =
+      cp.planUndo(moved, (p) => (p === '/p/new.ts' ? 'body' : null)).ops
+        .map((o) => `${o.op.kind}:${o.op.path}`).join(',') === 'remove:/p/new.ts,restore:/p/old.ts'
 
     // Rules: priority order, relative paths from the index, and truncation.
     const tree = {
@@ -894,7 +909,7 @@ async function main() {
     const ids = cmds.COMMANDS.map((c) => c.id)
     const commandsOk = ['ai.inlineEdit', 'ai.createRules', 'ai.undoLastChanges'].every((id) => ids.includes(id))
 
-    workflowOk = restoreOk && removeOk && keptOk && unavailableOk && summaryOk && hashOk && rulesOk && inlineOk && commandsOk
+    workflowOk = restoreOk && removeOk && keptOk && unavailableOk && summaryOk && hashOk && deleteOk && renameOk && rulesOk && inlineOk && commandsOk
     if (!workflowOk) {
       console.log('  (workflow parts:', JSON.stringify({ restoreOk, removeOk, keptOk, unavailableOk, summaryOk, hashOk, rulesOk, inlineOk, commandsOk }), ')')
     }
@@ -1077,7 +1092,8 @@ async function main() {
     const toolNames = agentMod.AGENT_TOOLS.map((t) => t.name)
     const toolsOk =
       ['codebase_search', 'grep_search', 'file_search', 'read_file'].every((n) => toolNames.includes(n)) &&
-      !toolNames.includes('search_code')
+      !toolNames.includes('search_code') &&
+      ['delete_file', 'rename_file'].every((n) => toolNames.includes(n))
 
     // File search ranks exact and prefix name matches above fuzzy ones.
     const scoreOk =
