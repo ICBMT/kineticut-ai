@@ -975,7 +975,13 @@ async function main() {
       mx.folderCounts(['src/a.ts', 'src/lib/b.ts']).some((d) => d.path === 'src' && d.count === 2) &&
       ranked.some((r) => r.kind === 'folder' && r.value === 'src/lib/') &&
       symRanked.every((r) => r.kind === 'symbol') && symRanked[0].value === 'symbol:foo' &&
-      mx.insertMention('hi @sr', { start: 3, end: 6, query: 'sr' }, 'src/a.ts').text === 'hi @src/a.ts '
+      mx.insertMention('hi @sr', { start: 3, end: 6, query: 'sr' }, 'src/a.ts').text === 'hi @src/a.ts ' &&
+      // Manual rules, past chats and git as mentions.
+      mx.rankMentions({ files: [], folders: [], symbols: [], rules: ['style', 'api'], chats: [] }, 'rule:st')[0]?.value === 'rule:style' &&
+      mx.rankMentions({ files: [], folders: [], symbols: [], chats: [{ id: 'c1', title: 'Auth refactor' }] }, 'chat:auth')[0]?.value === 'chat:c1' &&
+      mx.rankMentions({ files: ['a.ts'], folders: [], symbols: [] }, 'gi')[0]?.kind === 'git' &&
+      mx.parseMentionTokens('x @git @rule:style @chat:c1').join('|') === 'git|rule:style|chat:c1' &&
+      mx.ruleNameOf('.cursor/rules/style.mdc') === 'style' && mx.ruleNameOf('src/style.mdc') === null
 
     // Definition lookup for symbol mentions.
     const defLines = ['const x = 1', 'export function render(a: number) {', '  return a', '}']

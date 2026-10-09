@@ -24,8 +24,8 @@ the fallback.
 | 6 | Agent tools: web search and docs | Missing | — |
 | 7 | Modes: Agent and Ask | Done as Agent and Chat, switched from the composer footer. Manual mode missing. | `src/renderer/store/ai.ts`, `components/ChatPanel.tsx` |
 | 8 | Composer context: @Codebase, @files, @folders, @symbols, shown as removable chips | Done | `src/renderer/lib/mentions*.ts`, `components/ChatPanel.tsx` (`ComposerChips`) |
-| 9 | Composer context: @Past chats, @Docs, @Web, @Git | Missing | — |
-| 10 | Rules: `.cursor/rules/*.mdc` with `alwaysApply`, `globs`, `description` | Done. Manual `@rule` invocation missing. | `src/renderer/lib/rules.ts` |
+| 9 | Composer context: @Past chats, @Docs, @Web, @Git | Partial: `@chat:<title>` (past chat transcript) and `@git` (branch, changed files, diffs) done. @Docs and @Web are part of row 6. | `src/renderer/lib/mentionContext.ts`, `lib/mentions.ts` |
+| 10 | Rules: `.cursor/rules/*.mdc` with `alwaysApply`, `globs`, `description` | Done, including manual `@rule:<name>`, which adds the full rule to the request. | `src/renderer/lib/rules.ts`, `lib/mentionContext.ts` |
 | 11 | Diff review: per-file and per-hunk accept or reject, apply | Done. The composer shows an "N files changed +a −r" bar with per-file accept and reject, Accept all and Reject all; the full review keeps per-hunk control. | `src/renderer/store/review.ts`, `components/ReviewPanel.tsx` (`ChangesBar`) |
 | 12 | Per-turn checkpoints and undo | Done | `src/renderer/lib/checkpoints.ts` |
 | 13 | Inline edit (Ctrl+K) with in-place diff | Done | `src/renderer/lib/inlineEdit.ts`, `components/InlineEditWidget.tsx` |

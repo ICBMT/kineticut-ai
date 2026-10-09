@@ -17,7 +17,7 @@ export interface MentionMatch {
   query: string
 }
 
-export type MentionKind = 'file' | 'folder' | 'symbol' | 'codebase'
+export type MentionKind = 'file' | 'folder' | 'symbol' | 'codebase' | 'rule' | 'chat' | 'git'
 
 export interface MentionItem {
   kind: MentionKind
@@ -31,9 +31,21 @@ export interface MentionIndex {
   files: string[]
   folders: Array<{ path: string; count: number }>
   symbols: Array<{ name: string; rel: string }>
+  /** Manual rules: names of `.cursor/rules/<name>.mdc` files (`@rule:<name>`). */
+  rules?: string[]
+  /** Past chats, newest first (`@chat:<id>`). */
+  chats?: Array<{ id: string; title: string }>
 }
 
 export const SYMBOL_PREFIX = 'symbol:'
+export const RULE_PREFIX = 'rule:'
+export const CHAT_PREFIX = 'chat:'
+
+/** Rules are in `.cursor/rules`; a rule mention names the file without its extension. */
+export function ruleNameOf(rel: string): string | null {
+  const m = /^\.cursor\/rules\/(.+)\.mdc?$/.exec(rel.replace(/\\/g, '/'))
+  return m ? m[1] : null
+}
 
 /** The `@token` ending at the caret, or null when the caret is not inside one. */
 export function activeMention(text: string, caret: number): MentionMatch | null {
@@ -53,7 +65,7 @@ export function insertMention(text: string, match: MentionMatch, value: string):
 }
 
 /** Rank the mention candidates for a query (best first). */
-export function rankMentions(index: MentionIndex, query: string, limit = 8): MentionItem[] {
+function rankPathMentions(index: MentionIndex, query: string, limit = 8): MentionItem[] {
   if (query.toLowerCase().startsWith(SYMBOL_PREFIX)) {
     const q = query.slice(SYMBOL_PREFIX.length)
     const seen = new Set<string>()
@@ -135,12 +147,40 @@ export async function loadMentionIndex(folder: string): Promise<MentionIndex> {
     const files = entries.map((e) => e.rel)
     const symbols: Array<{ name: string; rel: string }> = []
     for (const e of entries) for (const name of e.symbols) symbols.push({ name, rel: e.rel })
-    const index: MentionIndex = { files, folders: folderCounts(files), symbols }
+    const rules = files.map(ruleNameOf).filter((n): n is string => n !== null)
+    const index: MentionIndex = { files, folders: folderCounts(files), symbols, rules }
     cache = { folder, index, at: Date.now() }
     return index
   } catch {
     return empty
   }
+}
+
+/**
+ * Candidates for the active mention. `rule:` and `chat:` list manual rules and
+ * past chats; `git` is offered first when typed; everything else ranks paths and symbols.
+ */
+export function rankMentions(index: MentionIndex, query: string, limit = 8): MentionItem[] {
+  const lower = query.toLowerCase()
+  if (lower.startsWith(RULE_PREFIX)) {
+    const q = lower.slice(RULE_PREFIX.length)
+    return (index.rules ?? [])
+      .filter((name) => name.toLowerCase().includes(q))
+      .slice(0, limit)
+      .map((name) => ({ kind: 'rule' as const, value: `${RULE_PREFIX}${name}`, label: name, detail: 'project rule' }))
+  }
+  if (lower.startsWith(CHAT_PREFIX)) {
+    const q = lower.slice(CHAT_PREFIX.length)
+    return (index.chats ?? [])
+      .filter((c) => c.title.toLowerCase().includes(q))
+      .slice(0, limit)
+      .map((c) => ({ kind: 'chat' as const, value: `${CHAT_PREFIX}${c.id}`, label: c.title, detail: 'past chat' }))
+  }
+  const paths = rankPathMentions(index, query, limit)
+  if (lower.length >= 2 && 'git'.startsWith(lower)) {
+    return [{ kind: 'git', value: 'git', label: 'Git changes', detail: 'branch, status and diffs' }, ...paths.slice(0, limit - 1)]
+  }
+  return paths
 }
 
 /** Every mention token in a message (without the `@`), trailing punctuation removed. */

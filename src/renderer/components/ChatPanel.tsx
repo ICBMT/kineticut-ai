@@ -27,7 +27,10 @@ import {
   Wand2,
   X,
   Braces,
+  BookOpen,
   Folder,
+  GitBranch,
+  MessagesSquare,
   Search,
   type LucideIcon,
 } from 'lucide-react'
@@ -39,7 +42,7 @@ import { cn, basename } from '../lib/utils'
 import { editorRef } from '../lib/editorRef'
 import { attachSelectionToChat, currentCodeAttachment } from '../lib/aiActions'
 import { expandSlash, filterSlash, slashQuery, type SlashCommand } from '../lib/slashCommands'
-import { parseMentionTokens, SYMBOL_PREFIX } from '../lib/mentions'
+import { CHAT_PREFIX, parseMentionTokens, RULE_PREFIX, SYMBOL_PREFIX } from '../lib/mentions'
 import {
   activeMention,
   insertMention,
@@ -218,8 +221,13 @@ function ChangeCard({ sessionId, message }: { sessionId: string; message: ChatMe
 
 /* ------------------------------ composer chips ------------------------------ */
 
-function mentionKind(token: string): { icon: LucideIcon; label: string } {
+function mentionKind(token: string, chatTitle: (id: string) => string | undefined): { icon: LucideIcon; label: string } {
   if (token === 'codebase') return { icon: Search, label: 'Codebase' }
+  if (token === 'git') return { icon: GitBranch, label: 'Git changes' }
+  if (token.startsWith(RULE_PREFIX)) return { icon: BookOpen, label: token.slice(RULE_PREFIX.length) }
+  if (token.startsWith(CHAT_PREFIX)) {
+    return { icon: MessagesSquare, label: chatTitle(token.slice(CHAT_PREFIX.length)) ?? 'Past chat' }
+  }
   if (token.startsWith(SYMBOL_PREFIX)) return { icon: Braces, label: token.slice(SYMBOL_PREFIX.length) }
   if (token.endsWith('/')) return { icon: Folder, label: token }
   return { icon: FileCode, label: token }
@@ -235,11 +243,13 @@ export function removeMention(text: string, token: string): string {
 /** Context the next message will carry, as removable chips: @mentions in the text. */
 function ComposerChips({ text, onChange }: { text: string; onChange(next: string): void }) {
   const tokens = useMemo(() => parseMentionTokens(text), [text])
+  const sessions = useAIStore((s) => s.sessions)
   if (tokens.length === 0) return null
+  const chatTitle = (id: string) => sessions.find((c) => c.id === id)?.title
   return (
     <div className="composer-chips" aria-label="Context for this message">
       {tokens.map((t) => {
-        const k = mentionKind(t)
+        const k = mentionKind(t, chatTitle)
         return (
           <span key={t} className="composer-chip" title={`@${t}`}>
             <k.icon size={11} className="shrink-0 text-[var(--accent)]" />
@@ -584,7 +594,7 @@ export function ChatPanel() {
       const items = filterSlash(slash)
       if (items.length) menu = { kind: 'slash', items }
     } else if (mention) {
-      const items = rankMentions(mentionIndex, mention.query)
+      const items = rankMentions({ ...mentionIndex, chats: sessions.map((c) => ({ id: c.id, title: c.title })) }, mention.query)
       if (items.length) menu = { kind: 'mention', items }
     }
   }
@@ -786,6 +796,12 @@ export function ChatPanel() {
                   >
                     {f.kind === 'codebase' ? (
                       <Search size={12} className="shrink-0 text-[var(--accent)]" />
+                    ) : f.kind === 'git' ? (
+                      <GitBranch size={12} className="shrink-0 text-[var(--accent)]" />
+                    ) : f.kind === 'rule' ? (
+                      <BookOpen size={12} className="shrink-0 text-[var(--accent)]" />
+                    ) : f.kind === 'chat' ? (
+                      <MessagesSquare size={12} className="shrink-0 text-[var(--accent)]" />
                     ) : f.kind === 'folder' ? (
                       <Folder size={12} className="shrink-0 text-[var(--accent)]" />
                     ) : f.kind === 'symbol' ? (
