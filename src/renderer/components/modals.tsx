@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { DiffEditor } from '@monaco-editor/react'
+import { MonacoDiff } from './MonacoDiff'
 import { cn } from '../lib/utils'
-import { diffEditorOptions, monacoThemeName } from '../lib/monaco'
 import { basename } from '../lib/utils'
 import { useAppStore } from '../store/app'
 import { Modal } from './ui'
@@ -77,16 +76,13 @@ export function DiffModal() {
         )
       }
     >
-      <DiffEditor
+      <MonacoDiff
         original={req.original}
         modified={modified}
         language={req.language}
-        theme={monacoThemeName()}
-        options={{ ...diffEditorOptions(), readOnly }}
+        readOnly={readOnly}
         height="62vh"
-        onMount={(editor: any) => {
-          diffRef.current = editor
-        }}
+        diffRef={diffRef}
       />
     </Modal>
   )

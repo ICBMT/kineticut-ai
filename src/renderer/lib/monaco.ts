@@ -351,10 +351,13 @@ export async function ensureModel(path: string): Promise<EnsureResult> {
     if (res.binary) {
       return { model: existing, binary: true, truncated: false }
     }
-    if (existing) {
+    // The editor component may create this path's model while the read is in
+    // flight, so look again after the await rather than trusting `existing`.
+    const current = monaco.editor.getModel(uri) ?? existing
+    if (current) {
       // Fill the (possibly empty) model the editor created for this path.
-      if (existing.getValue() !== res.content) {
-        existing.setValue(res.content)
+      if (current.getValue() !== res.content) {
+        current.setValue(res.content)
       }
     } else {
       monaco.editor.createModel(res.content, languageForPath(path), uri)
