@@ -35,7 +35,7 @@ the fallback.
 | 17 | Model providers: Ollama, OpenAI-compatible, Anthropic, Gemini | Done | `src/renderer/ai/providers.ts` |
 | 18 | Live progress: reading, writing, thinking, tool steps | Done. Each tool call is a timeline row with a readable label, live status, line ranges, result size, and expandable output. | `src/renderer/components/ChatActivity.tsx`, `components/AgentTimeline.tsx`, `lib/agentSteps.ts` |
 | 19 | Layout: activity bar, explorer, editor tabs, composer on the right, terminal | Done, but the look is not Cursor's. | `src/renderer/components/*` |
-| 20 | Visual design and density matching Cursor | Partial: composer is a bordered card, changes bar is Cursor-style. Rest of the app still to match. | `src/renderer/styles.css` |
+| 20 | Visual design and density matching Cursor | Partial: neutral dark base, one radius and elevation scale, a keyboard focus ring, composer card, changes bar, step timeline. Settings and the editor chrome still to match. | `src/renderer/styles.css` |
 | 21 | Settings like Cursor: Models, Rules, Indexing, Features pages | Partial: one long settings panel | `src/renderer/components/SettingsPanel.tsx` |
 | 22 | VS Code workbench (the real Cursor base) | Not started. Submodule is pinned, not checked out. | `vscode/`, `fork/`, `FORK.md` |
 

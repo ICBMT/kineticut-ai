@@ -3,13 +3,19 @@
 /* ------------------------------ theme tokens ------------------------------- */
 :root {
   color-scheme: dark;
-  --bg: #0b0b10;
-  --bg-elev: #101018;
-  --bg-panel: #0d0d14;
-  --bg-hover: #1a1a26;
-  --bg-active: #1d2438;
-  --border: #232336;
-  --border-soft: #1a1a2a;
+  --bg: #0e0e11;
+  --bg-elev: #151519;
+  --bg-panel: #111115;
+  --bg-hover: #1c1c23;
+  --bg-active: #22263a;
+  --border: #27272f;
+  --border-soft: #1d1d25;
+  /* One radius and elevation scale for every surface. */
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --shadow-pop: 0 10px 28px rgba(0, 0, 0, 0.38);
+  --focus-ring: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent);
   --text: #e6e6ef;
   --text-dim: #9a9ab0;
   --text-faint: #5c5c74;
@@ -28,6 +34,7 @@
 
 :root[data-theme='light'] {
   color-scheme: light;
+  --shadow-pop: 0 10px 28px rgba(20, 24, 40, 0.14);
   --bg: #f3f4f8;
   --bg-elev: #ffffff;
   --bg-panel: #fafbfe;
@@ -111,6 +118,16 @@ body,
 #root {
   height: 100%;
 }
+/* Keyboard focus is always visible on controls; mouse clicks stay quiet. */
+button:focus-visible,
+a:focus-visible,
+[role='option']:focus-visible,
+[role='tab']:focus-visible,
+.field-input:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 body {
   margin: 0;
   font-family: var(--font-ui);
