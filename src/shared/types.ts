@@ -100,6 +100,17 @@ export interface ExecOptions {
   env?: Record<string, string>
 }
 
+/** A web page read as text (`web.fetch`). */
+export interface WebPage {
+  url: string
+  status: number
+  contentType: string
+  title: string
+  text: string
+  /** The page was longer than the read limits; only the start is in `text`. */
+  truncated: boolean
+}
+
 export interface ExecResult {
   code: number
   stdout: string
@@ -229,6 +240,9 @@ export interface ProjectFileContent {
 export type SettingsBag = Record<string, unknown>
 
 export interface KineticAPI {
+  web: {
+    fetch(url: string): Promise<WebPage>
+  }
   system: {
     info(): Promise<SystemInfo>
     openFolder(): Promise<string | null>

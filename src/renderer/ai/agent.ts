@@ -106,6 +106,18 @@ export const AGENT_TOOLS: AIToolDef[] = [
     },
   },
   {
+    name: 'fetch_url',
+    description:
+      'Read a web page as text: documentation, an API reference, a changelog. Use when the answer depends on something outside the workspace. The user is asked to confirm each address first.',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'The full http or https address.' },
+      },
+      required: ['url'],
+    },
+  },
+  {
     name: 'delete_file',
     description:
       'Delete a text file in the workspace. The user is asked to confirm first. Use only when the user asked for the removal or it is clearly part of the task.',
@@ -209,6 +221,7 @@ You know this project: its purpose, stack, directory map, relevant files and how
 How to work:
 - Understand before you change. Use the project context, project_map, codebase_search and grep_search to find the code that already does something similar, and follow its pattern (naming, folder layout, how it is registered or wired up).
 - To build a feature: plan the files in one short list, create the new files with create_file, then wire them into the existing code (routes, registries, imports, menus, commands) with edit_file.
+- For library or API questions, read the official docs with fetch_url when the workspace does not answer them.
 - To delete or rename a file, use delete_file or rename_file, then find and update references with grep_search and edit_file.
 - To change an existing file, use edit_file with old_text copied exactly from the file. Keep old_text small but unique. Use write_file only for a small file or a full rewrite. Never guess file contents: recall_file or read_file first.
 - To find code, call codebase_search first (it searches the whole project by meaning and keywords), then read only the lines you need with read_file start_line/end_line. Use grep_search for exact text and file_search to find a file by name.
@@ -452,6 +465,29 @@ async function executeToolCall(
           }
         }
         return proposeWrite(target, '', null, String(args.content ?? ''), 'Agent wants to create a file', ctx)
+      }
+      case 'fetch_url': {
+        const url = String(args.url || '').trim()
+        if (!useSettingsStore.getState().agentAutoApprove) {
+          const ok = await new Promise<boolean>((resolve) => {
+            app.requestConfirm({
+              title: 'Read a web page',
+              message: url,
+              detail: 'The AI agent wants to read this page and use its text in the answer.',
+              confirmLabel: 'Read',
+              resolve,
+            })
+          })
+          if (!ok) return { result: 'The user did not allow reading this page.', error: true }
+        }
+        try {
+          const page = await api.web.fetch(url)
+          const head = `${page.title ? `${page.title} — ` : ''}${page.url} (${page.contentType})`
+          const note = page.truncated ? '\n[The page is longer; only the start is shown.]' : ''
+          return { result: truncate(`${head}\n\n${page.text}${note}`, 14000) }
+        } catch (err) {
+          return { result: `Error: ${err instanceof Error ? err.message : String(err)}`, error: true }
+        }
       }
       case 'delete_file': {
         const target = resolvePath(args.path)

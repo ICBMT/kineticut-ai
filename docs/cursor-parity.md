@@ -21,7 +21,7 @@ the fallback.
 | 3 | Agent tools: codebase search, grep, file search, read with line ranges, list dir | Done | `src/renderer/ai/agent.ts` |
 | 4 | Agent tools: create, edit, write, run command with approval | Done | `src/renderer/ai/agent.ts` |
 | 5 | Agent tools: delete and rename files | Done. Both ask for confirmation, refuse binary files and files with staged review changes, and are undoable from the chat (a rename is a delete plus a create). | `src/renderer/ai/agent.ts` (`delete_file`, `rename_file`, `removable`), `lib/checkpoints.ts` |
-| 6 | Agent tools: web search and docs | Missing | — |
+| 6 | Agent tools: web search and docs | Partial: `fetch_url` reads a page as text (asks first; http and https only; size and time limits). No web search provider yet. | `src/shared/webFetch.mjs`, `src/main/ipc.ts`, `dev-server/index.mjs`, `src/renderer/ai/agent.ts` |
 | 7 | Modes: Agent and Ask | Done as Agent and Chat, switched from the composer footer. Manual mode missing. | `src/renderer/store/ai.ts`, `components/ChatPanel.tsx` |
 | 8 | Composer context: @Codebase, @files, @folders, @symbols, shown as removable chips | Done | `src/renderer/lib/mentions*.ts`, `components/ChatPanel.tsx` (`ComposerChips`) |
 | 9 | Composer context: @Past chats, @Docs, @Web, @Git | Partial: `@chat:<title>` (past chat transcript) and `@git` (branch, changed files, diffs) done. @Docs and @Web are part of row 6. | `src/renderer/lib/mentionContext.ts`, `lib/mentions.ts` |

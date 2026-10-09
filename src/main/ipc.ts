@@ -29,6 +29,7 @@ import type {
   SystemInfo,
   TerminalOptions,
 } from '../shared/types'
+import { fetchPageText } from '../shared/webFetch.mjs'
 
 /* --------------------------------- helpers --------------------------------- */
 
@@ -533,6 +534,8 @@ export function registerIpc(getWin: () => BrowserWindow | null) {
   ipcMain.handle('system:openExternal', async (_e, url: string) => {
     await shell.openExternal(url)
   })
+
+  ipcMain.handle('web:fetch', async (_e, url: string) => fetchPageText(url))
 
   ipcMain.handle('system:exec', async (_e, payload: { command: string; opts?: { cwd?: string; timeoutMs?: number; env?: Record<string, string> } }): Promise<ExecResult> => {
     const { command, opts } = payload

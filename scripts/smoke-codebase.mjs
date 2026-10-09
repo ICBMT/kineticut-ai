@@ -10,6 +10,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { createCodebaseIndex, chunkText } from '../src/shared/codebaseIndex.mjs'
 import { scanProject } from '../src/shared/projectMemory.mjs'
+import http from 'node:http'
+import { fetchPageText, htmlToText } from '../src/shared/webFetch.mjs'
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
 const SKIP = new Set(['node_modules', '.git', 'dist', 'dist-web', 'out', 'build'])
@@ -127,6 +129,33 @@ await fs.rm(touchRoot, { recursive: true, force: true })
 const sample = 'import x from "y"\n\n// adds two numbers\nexport function add(a, b) {\n  return a + b\n}\n\nexport class Box {\n  get() {\n    return 1\n  }\n}\n'
 const sampleChunks = chunkText(sample)
 check('chunks start at declarations and carry the symbol', sampleChunks.some((c) => c.symbol === 'add') && sampleChunks.every((c) => c.endLine - c.startLine < 60))
+
+// Web pages for the agent: HTML becomes text, scripts are dropped, only http(s) is read.
+const html = htmlToText('<html><head><title>Docs &amp; Guide</title><script>var x = 1</script></head><body><h1>Install</h1><p>Run&nbsp;npm&nbsp;ci</p></body></html>')
+check('html becomes text: title, entities, no scripts', html.title === 'Docs & Guide' && html.text.includes('Install') && html.text.includes('Run npm ci') && !html.text.includes('var x'))
+const pageServer = http.createServer((req, res) => {
+  if (req.url === '/doc') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    res.end('<title>API</title><p>fetch(url) returns a Response.</p>')
+  } else if (req.url === '/image') {
+    res.writeHead(200, { 'content-type': 'image/png' })
+    res.end('x')
+  } else {
+    res.writeHead(404, { 'content-type': 'text/plain' })
+    res.end('missing')
+  }
+})
+await new Promise((r) => pageServer.listen(0, '127.0.0.1', r))
+const base = `http://127.0.0.1:${pageServer.address().port}`
+const page = await fetchPageText(`${base}/doc`)
+check('fetchPageText reads an html page as text', page.status === 200 && page.title === 'API' && page.text.includes('returns a Response'))
+const refused = await fetchPageText('file:///etc/passwd').then(() => 'read', (e) => e.message)
+check('non-http schemes are refused', /Only http and https/.test(refused))
+const notText = await fetchPageText(`${base}/image`).then(() => 'read', (e) => e.message)
+check('binary responses are refused', /Not a text page/.test(notText))
+const missing = await fetchPageText(`${base}/nope`).then(() => 'read', (e) => e.message)
+check('HTTP errors are reported', missing === 'HTTP 404 Not Found')
+pageServer.close()
 
 await fs.rm(cacheDir, { recursive: true, force: true })
 const failed = checks.filter(([, ok]) => !ok)

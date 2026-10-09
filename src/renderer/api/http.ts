@@ -17,6 +17,7 @@ import type {
   SettingsBag,
   SystemInfo,
   TerminalOptions,
+  WebPage,
 } from '../../shared/types'
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
@@ -106,6 +107,9 @@ function termSocket(id: string): WebSocket {
 
 export function createHttpApi(): KineticAPI {
   return {
+    web: {
+      fetch: (url) => post<WebPage>('/api/web/fetch', { url }),
+    },
     system: {
       info: () => http<SystemInfo>('/api/system'),
       openFolder: async () => null, // desktop-only (native dialog)

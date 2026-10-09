@@ -50,6 +50,9 @@ ipcRenderer.on('win:maximized', (_e, maximized: boolean) => {
 /* ------------------------------ exposed API ------------------------------- */
 
 const api: KineticAPI = {
+  web: {
+    fetch: (url) => ipcRenderer.invoke('web:fetch', url),
+  },
   system: {
     info: () => ipcRenderer.invoke('system:info'),
     openFolder: () => ipcRenderer.invoke('system:openFolder'),
