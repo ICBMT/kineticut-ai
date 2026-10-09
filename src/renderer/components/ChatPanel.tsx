@@ -53,7 +53,7 @@ import { describeChanges, type FileChange } from '../lib/checkpoints'
 import { relativePath } from '../lib/utils'
 import { ActivityPanel } from './ChatActivity'
 import { ModelSelect } from './ModelSelect'
-import { StagedBanner } from './ReviewPanel'
+import { ChangesBar } from './ReviewPanel'
 import { EmptyState, IconButton, Segmented, Spinner } from './ui'
 
 /* ------------------------------ markdown body ------------------------------- */
@@ -745,7 +745,7 @@ export function ChatPanel() {
       </div>
 
       <div className="relative border-t border-[var(--border-soft)] p-2 flex flex-col gap-1.5">
-        <StagedBanner />
+        <ChangesBar />
         {menu && (
           <div
             role="listbox"
@@ -801,6 +801,7 @@ export function ChatPanel() {
                 ))}
           </div>
         )}
+        <div className="composer-card">
         {attach && (
           <div className="flex items-center gap-2 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-elev)] px-2 py-1.5 text-[11px] text-[var(--text-dim)]">
             <FileCode size={12} className="shrink-0 text-[var(--accent)]" />
@@ -814,7 +815,7 @@ export function ChatPanel() {
             </button>
           </div>
         )}
-        <div className="flex items-end gap-1.5">
+        <div className="composer-row">
           <IconButton
             icon={Paperclip}
             size={15}
@@ -873,6 +874,7 @@ export function ChatPanel() {
               onClick={send}
             />
           )}
+        </div>
         </div>
         <div className="text-[9.5px] text-[var(--text-faint)] px-0.5">
           Enter to send · Shift+Enter for newline · <span className="font-mono">/</span> commands ·{' '}

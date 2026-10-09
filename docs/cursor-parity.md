@@ -26,7 +26,7 @@ the fallback.
 | 8 | Composer context: @Codebase, @files, @folders, @symbols | Done | `src/renderer/lib/mentions*.ts` |
 | 9 | Composer context: @Past chats, @Docs, @Web, @Git | Missing | — |
 | 10 | Rules: `.cursor/rules/*.mdc` with `alwaysApply`, `globs`, `description` | Done. Manual `@rule` invocation missing. | `src/renderer/lib/rules.ts` |
-| 11 | Diff review: per-file and per-hunk accept or reject, apply | Done in a review panel. The composer has a banner, not Cursor's inline "N files changed" bar. | `src/renderer/store/review.ts`, `components/ReviewPanel.tsx` |
+| 11 | Diff review: per-file and per-hunk accept or reject, apply | Done. The composer shows an "N files changed +a −r" bar with per-file accept and reject, Accept all and Reject all; the full review keeps per-hunk control. | `src/renderer/store/review.ts`, `components/ReviewPanel.tsx` (`ChangesBar`) |
 | 12 | Per-turn checkpoints and undo | Done | `src/renderer/lib/checkpoints.ts` |
 | 13 | Inline edit (Ctrl+K) with in-place diff | Done | `src/renderer/lib/inlineEdit.ts`, `components/InlineEditWidget.tsx` |
 | 14 | Multi-line next-edit (Tab) | Done | `src/renderer/lib/nextEdit.ts` |
@@ -35,7 +35,7 @@ the fallback.
 | 17 | Model providers: Ollama, OpenAI-compatible, Anthropic, Gemini | Done | `src/renderer/ai/providers.ts` |
 | 18 | Live progress: reading, writing, thinking, tool steps | Done | `src/renderer/components/ChatActivity.tsx` |
 | 19 | Layout: activity bar, explorer, editor tabs, composer on the right, terminal | Done, but the look is not Cursor's. | `src/renderer/components/*` |
-| 20 | Visual design and density matching Cursor | Missing | `src/renderer/styles.css` |
+| 20 | Visual design and density matching Cursor | Partial: composer is a bordered card, changes bar is Cursor-style. Rest of the app still to match. | `src/renderer/styles.css` |
 | 21 | Settings like Cursor: Models, Rules, Indexing, Features pages | Partial: one long settings panel | `src/renderer/components/SettingsPanel.tsx` |
 | 22 | VS Code workbench (the real Cursor base) | Not started. Submodule is pinned, not checked out. | `vscode/`, `fork/`, `FORK.md` |
 
@@ -44,7 +44,7 @@ the fallback.
 **Phase 1: Electron app.** Rebuild the renderer to match Cursor's flows. Start
 with the composer and review, since they define how the AI feels: composer modes
 and context chips, the agent step timeline, the "N files changed" bar with
-accept and reject, and the visual system. Then the settings pages, then rows 5,
+accept and reject (done), and the visual system. Then the settings pages, then rows 5,
 6, 9 and 10 (manual rules).
 
 **Phase 2: verification.** Run the app in a real headless browser. `@sparticuz/chromium`

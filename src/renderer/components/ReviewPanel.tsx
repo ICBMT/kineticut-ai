@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
-import { Check, FileCode, FileDiff, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, FileCode, FileDiff, Maximize2, X } from 'lucide-react'
 import { useReviewStore, hunksOf, type PendingChange } from '../store/review'
 import { useAppStore } from '../store/app'
 import { basename, cn } from '../lib/utils'
 import { Modal, EmptyState } from './ui'
-import type { Hunk } from '../lib/diffHunks'
+import { countChanges, type Hunk } from '../lib/diffHunks'
 
 /** Lines shown per hunk before the rest is folded. */
 const HUNK_LINE_CAP = 160
@@ -253,16 +253,95 @@ function HunkCard({
 }
 
 /** Chat-side notice that agent changes are waiting for review. */
-export function StagedBanner() {
-  const count = useReviewStore((s) => Object.keys(s.pending).length)
-  if (count === 0) return null
+/**
+ * Cursor-style "N files changed" bar above the composer. Every staged file shows
+ * its +/- counts with its own accept and reject; the header accepts or rejects
+ * the whole batch. Nothing is on disk until it is accepted.
+ */
+export function ChangesBar() {
+  const pending = useReviewStore((s) => s.pending)
+  const [collapsed, setCollapsed] = useState(false)
+  const paths = Object.keys(pending)
+  if (paths.length === 0) return null
+  const stats = paths.map((p) => countChanges(hunksOf(pending[p])))
+  const added = stats.reduce((n, c) => n + c.added, 0)
+  const removed = stats.reduce((n, c) => n + c.removed, 0)
+  const store = () => useReviewStore.getState()
+  const acceptFile = async (path: string) => {
+    const ok = await store().applyFile(path)
+    if (ok) useAppStore.getState().toast({ kind: 'success', title: `Accepted ${basename(path)}`, duration: 1600 })
+  }
   return (
-    <button className="staged-banner" onClick={() => useReviewStore.getState().openReview(null)}>
-      <FileDiff size={13} />
-      <span>
-        {count} file{count === 1 ? '' : 's'} staged by the AI
-      </span>
-      <span className="staged-banner-cta">Review</span>
-    </button>
+    <section className="changes-bar" aria-label="Files changed by the AI">
+      <header className="changes-bar-head">
+        <button
+          className="changes-bar-toggle"
+          aria-expanded={!collapsed}
+          onClick={() => setCollapsed((v) => !v)}
+          title={collapsed ? 'Show changed files' : 'Hide changed files'}
+        >
+          {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+          <span>
+            {paths.length} file{paths.length === 1 ? '' : 's'} changed
+          </span>
+          <span className="changes-stat-add">+{added}</span>
+          <span className="changes-stat-del">−{removed}</span>
+        </button>
+        <div className="changes-bar-actions">
+          <button
+            className="changes-row-btn"
+            title="Open the full review with per-hunk controls"
+            aria-label="Open full review"
+            onClick={() => store().openReview(null)}
+          >
+            <Maximize2 size={12} />
+          </button>
+          <button className="btn !py-0.5 !px-2 text-[11px]" title="Reject every staged change" onClick={() => store().discardAll()}>
+            Reject all
+          </button>
+          <button
+            className="btn btn-primary !py-0.5 !px-2 text-[11px]"
+            title="Accept every staged change and write it to disk"
+            onClick={() => void store().applyAll()}
+          >
+            Accept all
+          </button>
+        </div>
+      </header>
+      {!collapsed && (
+        <ul className="changes-bar-list">
+          {paths.map((p, i) => {
+            const c = pending[p]
+            return (
+              <li key={p} className="changes-bar-row">
+                <button className="changes-bar-file" title={p} onClick={() => store().openReview(p)}>
+                  <FileCode size={12} className="shrink-0 text-[var(--accent)]" />
+                  <span className="truncate">{basename(p)}</span>
+                  {c.original === null && <span className="review-badge">new</span>}
+                  <span className="changes-stat-add">+{stats[i].added}</span>
+                  <span className="changes-stat-del">−{stats[i].removed}</span>
+                </button>
+                <button
+                  className="changes-row-btn is-reject"
+                  title={`Reject changes to ${basename(p)}`}
+                  aria-label={`Reject changes to ${basename(p)}`}
+                  onClick={() => store().discardFile(p)}
+                >
+                  <X size={12} />
+                </button>
+                <button
+                  className="changes-row-btn is-accept"
+                  title={`Accept changes to ${basename(p)}`}
+                  aria-label={`Accept changes to ${basename(p)}`}
+                  onClick={() => void acceptFile(p)}
+                >
+                  <Check size={12} />
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </section>
   )
 }
