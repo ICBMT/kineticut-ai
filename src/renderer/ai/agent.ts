@@ -7,6 +7,7 @@ import { api } from '../api'
 import { codeProfileLine, dirLine, recallFile } from '../lib/projectKnowledge'
 import { languageForPath } from '../lib/languages'
 import { joinPath, truncate } from '../lib/utils'
+import { applyTextEdit } from '../lib/textEdit'
 import { useAppStore } from '../store/app'
 import { useEditorStore } from '../store/editor'
 import { useSettingsStore } from '../store/settings'
@@ -55,9 +56,40 @@ export const AGENT_TOOLS: AIToolDef[] = [
     },
   },
   {
+    name: 'edit_file',
+    description:
+      'Change part of an existing file by replacing exact text. Preferred for every change to an existing file: copy old_text exactly from the file (read it first) and give the new_text. The user reviews a diff before it is applied.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path or path relative to the workspace root.' },
+        old_text: {
+          type: 'string',
+          description: 'The exact existing text to replace, including indentation. Must match once unless replace_all is true.',
+        },
+        new_text: { type: 'string', description: 'The text that replaces old_text.' },
+        replace_all: { type: 'boolean', description: 'Replace every occurrence of old_text (default false).' },
+      },
+      required: ['path', 'old_text', 'new_text'],
+    },
+  },
+  {
+    name: 'create_file',
+    description:
+      'Create a new file (parent folders are created). Fails if the file already exists: use edit_file to change an existing file. The user reviews the new file before it is written.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path or path relative to the workspace root.' },
+        content: { type: 'string', description: 'The complete content of the new file.' },
+      },
+      required: ['path', 'content'],
+    },
+  },
+  {
     name: 'write_file',
     description:
-      'Write a file, replacing its entire content. The user reviews the change in a diff before it is applied. Provide the complete new file content.',
+      'Replace the entire content of a file. Use only for small files or a full rewrite; prefer edit_file for changes. The user reviews the change in a diff before it is applied.',
     parameters: {
       type: 'object',
       properties: {
@@ -115,16 +147,15 @@ export const AGENT_TOOLS: AIToolDef[] = [
 ]
 
 export const AGENT_SYSTEM_PROMPT = `You are Kineticut AI Agent, an expert software engineer working inside the user's code editor.
-You help with any software task: exploring codebases, writing features, fixing bugs, refactoring, testing and running commands.
+You know this project: its purpose, stack, directory map, relevant files and how they connect are in the project context below. You can read any file from project memory instantly with recall_file, and you can change the project.
 
-Rules:
-- The workspace root is the user's opened folder. Prefer workspace-relative paths in tool calls.
-- Call project_map FIRST to navigate — it gives the project's purpose, the directory map and a summary of every file.
-- Use recall_file to read any project file from memory (fast). Use read_file for a file that is not in memory yet. Never guess file contents.
-- Prefer small, surgical changes. Preserve existing style and formatting.
-- write_file replaces the ENTIRE file — always include the complete new content, not a fragment.
-- run_command is for non-interactive commands only (builds, tests, scripts). Never run destructive commands without asking the user first in your reply.
-- After finishing, summarize what you changed and suggest next steps. Be concise.`
+How to work:
+- Understand before you change. Use the project context, project_map and search_code to find the code that already does something similar, and follow its pattern (naming, folder layout, how it is registered or wired up).
+- To build a feature: plan the files in one short list, create the new files with create_file, then wire them into the existing code (routes, registries, imports, menus, commands) with edit_file.
+- To change an existing file, use edit_file with old_text copied exactly from the file. Keep old_text small but unique. Use write_file only for a small file or a full rewrite. Never guess file contents: recall_file or read_file first.
+- Every write is reviewed by the user in a diff. If a write is rejected, do not repeat it: explain the change and ask how to proceed.
+- Verify when the project has a check (typecheck, tests, build): run it with run_command and fix what it reports. run_command is non-interactive only; never run destructive commands without asking first.
+- Answer concisely at the end: what you created or changed (with file paths), what you verified, and what the user should check next.`
 
 export type AgentToolEvent =
   | { type: 'step_start'; step: number; maxSteps: number }
@@ -231,37 +262,31 @@ async function executeToolCall(call: AIToolCall): Promise<{ result: string; erro
       case 'write_file': {
         const target = resolvePath(args.path)
         const content = String(args.content ?? '')
-        let current = ''
-        try {
-          const res = await api.fs.read(target)
-          current = res.binary ? '' : res.content
-        } catch {
-          /* new file */
+        const current = (await readCurrent(target)) ?? ''
+        return proposeWrite(target, current, content, 'Agent wants to write a file')
+      }
+      case 'edit_file': {
+        const target = resolvePath(args.path)
+        const current = await readCurrent(target, true)
+        if (current === null) {
+          return { result: `Error: ${args.path} does not exist. Use create_file for a new file.`, error: true }
         }
-        const settings = useSettingsStore.getState()
-        if (settings.agentAutoApprove) {
-          await api.fs.write(target, content)
-        } else {
-          const approved = await new Promise<boolean>((resolve) => {
-            app.requestDiff({
-              path: target,
-              original: current,
-              modified: content,
-              language: languageForPath(target),
-              title: 'Agent wants to write a file',
-              resolve,
-            })
-          })
-          if (!approved) {
-            return {
-              result:
-                'The user rejected this write. Do not retry the same write; explain what you wanted to change and ask how to proceed.',
-              error: true,
-            }
+        const edit = applyTextEdit(current, String(args.old_text ?? ''), String(args.new_text ?? ''), args.replace_all === true)
+        if (!edit.ok) return { result: `Error: ${edit.reason}`, error: true }
+        const outcome = await proposeWrite(target, current, edit.content, 'Agent wants to edit a file')
+        if (outcome.error) return outcome
+        return { result: `Edited ${args.path}: ${edit.replacements} replacement${edit.replacements === 1 ? '' : 's'}.` }
+      }
+      case 'create_file': {
+        const target = resolvePath(args.path)
+        const existing = await readCurrent(target, true)
+        if (existing !== null) {
+          return {
+            result: `Error: ${args.path} already exists. Use edit_file to change it, or write_file for a full rewrite.`,
+            error: true,
           }
-          await api.fs.write(target, content)
         }
-        return { result: `Wrote ${args.path} (${content.length} bytes)` }
+        return proposeWrite(target, '', String(args.content ?? ''), 'Agent wants to create a file')
       }
       case 'run_command': {
         const command = String(args.command || '')
@@ -336,4 +361,68 @@ async function executeToolCall(call: AIToolCall): Promise<{ result: string; erro
   } catch (err) {
     return { result: `Error: ${err instanceof Error ? err.message : String(err)}`, error: true }
   }
+}
+
+/* ------------------------------- file writes ------------------------------- */
+
+/**
+ * The current text of a file, or '' (or null with `missingAsNull`) when it does
+ * not exist yet. Binary files read as empty text: the agent cannot edit them.
+ */
+async function readCurrent(target: string, missingAsNull = false): Promise<string | null> {
+  try {
+    const res = await api.fs.read(target)
+    return res.binary ? '' : res.content
+  } catch {
+    return missingAsNull ? null : ''
+  }
+}
+
+/**
+ * Show the proposed content as a diff and write it once the user accepts. With
+ * auto-approve on, it is written straight away. Every write path goes through
+ * here, so the review rule cannot be bypassed by a tool.
+ */
+async function proposeWrite(
+  target: string,
+  current: string,
+  content: string,
+  title: string,
+): Promise<{ result: string; error?: boolean }> {
+  const app = useAppStore.getState()
+  const settings = useSettingsStore.getState()
+  if (settings.agentAutoApprove) {
+    await api.fs.write(target, content)
+    return { result: `Wrote ${displayPath(target)} (${content.length} bytes)` }
+  }
+  // The diff's Apply button calls onApply with what the user accepted (which
+  // they may have edited in the diff) and then resolves true. Without onApply
+  // the modal is read-only, so an agent write could never be approved.
+  let written: string | null = null
+  const approved = await new Promise<boolean>((resolve) => {
+    app.requestDiff({
+      path: target,
+      original: current,
+      modified: content,
+      language: languageForPath(target),
+      title,
+      onApply: async (value) => {
+        await api.fs.write(target, value)
+        written = value
+      },
+      resolve,
+    })
+  })
+  if (!approved || written === null) {
+    return {
+      result:
+        'The user rejected this change. Do not retry the same change; explain what you wanted to change and ask how to proceed.',
+      error: true,
+    }
+  }
+  return { result: `Wrote ${displayPath(target)} (${(written as string).length} bytes)` }
+}
+
+function displayPath(target: string): string {
+  return target.split(/[\\/]/).slice(-3).join('/')
 }

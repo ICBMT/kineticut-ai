@@ -101,7 +101,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   inlineModel: null,
   inlineCompletions: true,
   agentAutoApprove: false,
-  agentMaxSteps: 8,
+  agentMaxSteps: 16,
   theme: 'dark',
   accent: 'ocean',
   editorFontFamily: 'jetbrains',

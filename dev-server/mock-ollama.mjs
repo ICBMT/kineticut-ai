@@ -132,6 +132,24 @@ function cannedReply(messages, tools) {
     return { text: "return items.map((item) => item?.value ?? null).filter(Boolean)\n", toolCalls: null }
   }
 
+  // Test script for feature building: create a file, then edit it, then summarize.
+  if (tools && tools.length && /mock:create-feature/.test(user)) {
+    const last = [...messages].reverse().find((m) => m.role === 'tool')
+    if (!last) {
+      return {
+        text: '',
+        toolCalls: [{ id: 'call_feat_1', name: 'create_file', arguments: JSON.stringify({ path: 'scratch-feature/greet.ts', content: 'export function greet(name: string) {\n  return `Hello, ${name}`\n}\n' }) }],
+      }
+    }
+    if (String(last.content).startsWith('Wrote ')) {
+      return {
+        text: '',
+        toolCalls: [{ id: 'call_feat_2', name: 'edit_file', arguments: JSON.stringify({ path: 'scratch-feature/greet.ts', old_text: 'return `Hello, ${name}`', new_text: 'return `Hello, ${name}!`' }) }],
+      }
+    }
+    return { text: 'Created `scratch-feature/greet.ts` and edited the greeting.', toolCalls: null }
+  }
+
   // Agent mode: first turn → read a file; after tool results → summarize.
   if (tools && tools.length && !hasToolResult(messages)) {
     const file = extractAttachedFile(messages) || 'package.json'

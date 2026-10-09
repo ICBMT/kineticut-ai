@@ -743,6 +743,34 @@ async function main() {
   }
   checks.push(['split editor groups work (store)', groupsWork])
 
+  // Agent exact-text edits (edit_file) and file creation (create_file): the
+  // pure edit rules and the tool surface the model is offered.
+  let editRulesOk = false
+  try {
+    const { applyTextEdit } = await server.ssrLoadModule('/lib/textEdit.ts')
+    const { AGENT_TOOLS } = await server.ssrLoadModule('/ai/agent.ts')
+    const names = AGENT_TOOLS.map((t) => t.name)
+    const unique = applyTextEdit('a\nb\nc', 'b', 'B')
+    const missing = applyTextEdit('a\nb', 'zzz', 'y')
+    const ambiguous = applyTextEdit('x\nx', 'x', 'y')
+    const all = applyTextEdit('x\nx', 'x', 'y', true)
+    const crlf = applyTextEdit('a\r\nb\r\n', 'a\nb', 'a\nc')
+    const empty = applyTextEdit('abc', '', 'y')
+    const same = applyTextEdit('abc', 'b', 'b')
+    editRulesOk =
+      names.includes('edit_file') &&
+      names.includes('create_file') &&
+      unique.ok && unique.content === 'a\nB\nc' && unique.replacements === 1 &&
+      !missing.ok && /not found/.test(missing.reason) &&
+      !ambiguous.ok && /matches 2 places/.test(ambiguous.reason) &&
+      all.ok && all.content === 'y\ny' && all.replacements === 2 &&
+      crlf.ok && crlf.content === 'a\r\nc\r\n' &&
+      !empty.ok && !same.ok
+  } catch (err) {
+    console.log('  (edit-rule check failed:', String(err).slice(0, 200), ')')
+  }
+  checks.push(['edit_file/create_file: exact-text edit rules + tool surface', editRulesOk])
+
   checks.push(['no runtime errors', realErrors.length === 0])
 
   let failed = 0
