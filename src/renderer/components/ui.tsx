@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { cloneElement, isValidElement, useEffect, useRef, useState } from 'react'
 import { Loader2, X, type LucideIcon } from 'lucide-react'
 import { cn } from '../lib/utils'
 
@@ -229,7 +229,11 @@ export function Dropdown({
   }, [open])
   return (
     <div ref={ref} className="relative">
-      <div onClick={() => setOpen((v) => !v)}>{trigger}</div>
+      <div onClick={() => setOpen((v) => !v)}>
+        {isValidElement(trigger)
+          ? cloneElement(trigger as React.ReactElement<{ 'aria-expanded'?: boolean }>, { 'aria-expanded': open })
+          : trigger}
+      </div>
       {open && (
         <div
           className={cn('menu-pop', align === 'right' ? 'right-0' : 'left-0')}

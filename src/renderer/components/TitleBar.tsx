@@ -192,13 +192,13 @@ export function TitleBar() {
         <span className="tb-app">
           Kineticut&nbsp;<span className="text-gradient">AI</span>
         </span>
-        <div className="no-drag">
+        <nav className="tb-menus" aria-label="Application menu">
           <DropdownMenuButton label="File" items={fileMenu} />
           <DropdownMenuButton label="Edit" items={editMenu} />
           <DropdownMenuButton label="View" items={viewMenu} />
           <DropdownMenuButton label="AI" items={aiMenu} />
           <DropdownMenuButton label="Help" items={helpMenu} />
-        </div>
+        </nav>
       </div>
 
       <div className="tb-center">
@@ -258,5 +258,14 @@ export function TitleBar() {
 }
 
 function DropdownMenuButton({ label, items }: { label: string; items: MenuItem[] }) {
-  return <Dropdown trigger={<button className="tb-menu-btn">{label}</button>} items={items} />
+  return (
+    <Dropdown
+      trigger={
+        <button className="tb-menu-btn" type="button" aria-haspopup="menu">
+          {label}
+        </button>
+      }
+      items={items}
+    />
+  )
 }

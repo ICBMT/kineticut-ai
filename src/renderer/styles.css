@@ -192,6 +192,23 @@ button {
   align-items: center;
   gap: 2px;
   padding: 0 8px;
+  height: 100%;
+  min-width: 0;
+}
+/* The menubar: a horizontal row of labels that sit on the title bar's centre line.
+   Without this the menu wrappers stacked vertically and spilled over the activity bar. */
+.tb-menus {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  height: 100%;
+  margin-left: 6px;
+}
+.tb-menus > div {
+  display: flex;
+  align-items: center;
+  height: 100%;
 }
 .tb-center {
   flex: 1;
@@ -217,17 +234,29 @@ button {
 }
 .tb-menu-btn {
   -webkit-app-region: no-drag;
-  font-size: 12px;
+  font-size: 12.5px;
+  line-height: 1;
+  font-weight: 500;
   color: var(--text-dim);
-  padding: 3px 9px;
+  height: 26px;
+  padding: 0 9px;
   border-radius: 6px;
   background: transparent;
   border: 0;
   cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
-.tb-menu-btn:hover {
+.tb-menu-btn:hover,
+.tb-menu-btn[aria-expanded='true'] {
   background: var(--bg-hover);
   color: var(--text);
+}
+.tb-menu-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
 }
 .win-controls {
   display: flex;
