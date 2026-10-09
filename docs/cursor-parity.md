@@ -47,7 +47,7 @@ and context chips, the agent step timeline, the "N files changed" bar with
 accept and reject (done), and the visual system. Then the settings pages, then rows 5,
 6, 9 and 10 (manual rules).
 
-**Phase 2: verification.** Run the app in a real headless browser. `@sparticuz/chromium`
+**Phase 2: verification (done).** `scripts/smoke-browser.mjs` (`npm run smoke:browser`, needs `KC_CHROME`) runs the app in a real headless Chromium: empty launch, changes bar, composer chips, keyboard focus and settings pages. Earlier plan text: run the app in a real headless browser. `@sparticuz/chromium`
 (on npm) ships a Chromium binary, and `playwright-core` drives it. Add browser tests
 for the composer, the review bar, shortcuts and the empty launch state.
 

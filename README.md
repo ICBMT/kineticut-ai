@@ -177,7 +177,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design and
 | `npm run dist` | Package installers with electron-builder |
 | `npm run typecheck` | TypeScript check |
 | `npm run smoke` | Headless render + regression test (needs `dev:web` running) |
-| `npm run smoke:codebase` | Codebase index test: ignore files, content hashes, chunks, embeddings, restart (no browser) |
+| `npm run smoke:codebase` | Codebase index test: ignore files, content hashes, chunks, embeddings, restart, web fetch (no browser) |
+| `npm run smoke:browser` | Real headless Chromium: empty launch, changes bar, composer chips, focus, settings pages (needs `dev:web` and `KC_CHROME=/path/to/chrome`) |
 | `npm run icon` | Regenerate `assets/icon.png` from `assets/icon.svg` |
 | `npm run mock:ollama` | Run only the mock Ollama server (:11434) |
 
