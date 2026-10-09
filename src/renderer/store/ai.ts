@@ -30,6 +30,9 @@ export interface ToolEventEntry {
   result?: string
 }
 
+/** Chat: answers from chat context. Agent: edits with tools. Manual: only what the user attached. */
+export type ChatMode = 'chat' | 'agent' | 'manual'
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'tool'
@@ -50,7 +53,7 @@ export interface ChatMessage {
 export interface ChatSession {
   id: string
   title: string
-  mode: 'chat' | 'agent'
+  mode: ChatMode
   messages: ChatMessage[]
   createdAt: number
   /** The project the chat belongs to (null for chats from before projects were tracked). */
@@ -105,9 +108,9 @@ interface AIState {
   isRunning(sessionId: string | null): boolean
   attach: { path: string; label: string; text: string } | null
 
-  newSession(mode?: 'chat' | 'agent'): string
+  newSession(mode?: ChatMode): string
   setActive(id: string | null): void
-  setMode(id: string, mode: 'chat' | 'agent'): void
+  setMode(id: string, mode: ChatMode): void
   setAttach(a: { path: string; label: string; text: string } | null): void
   send(text: string): Promise<void>
   /** Re-generate the last assistant reply (answers the last user message again). */
@@ -368,15 +371,21 @@ export const useAIStore = create<AIState>()(
         try {
           log('Searching the project knowledge base', 'info', { phase: 'context' })
           const current = get().sessions.find((x) => x.id === sessionId)
-          const brief = currentBriefText()
+          // Manual mode sends only what the user chose: no brief, no retrieval, no tools.
+          const brief = mode === 'manual' ? '' : currentBriefText()
           // Cursor mode: chat gets the codebase snippets that match the question;
           // agent mode searches the codebase with its own tools, so nothing is
           // pre-injected for it. Classic mode injects the whole-file knowledge base.
           const appState = useAppStore.getState()
           const cursorMode = useSettingsStore.getState().workspaceMode === 'cursor' && Boolean(appState.folder)
-          const ctx = cursorMode
-            ? await cursorContextFor(appState.folder!, query, { retrieve: mode !== 'agent' })
-            : await retrieveContextForQuery(query)
+          const ctx =
+            mode === 'manual'
+              ? cursorMode
+                ? await cursorContextFor(appState.folder!, query, { retrieve: false, identity: false })
+                : { block: null, files: [] as string[] }
+              : cursorMode
+                ? await cursorContextFor(appState.folder!, query, { retrieve: mode !== 'agent' })
+                : await retrieveContextForQuery(query)
           const more = ctx.files.length > 4 ? ` +${ctx.files.length - 4} more` : ''
           if (cursorMode && mode === 'agent') {
             log('Agent mode: the agent searches the codebase with its tools as it works', 'info')

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   Check,
   Cloud,
+  Database,
   Download,
   FileCode,
   Globe,
@@ -416,11 +417,12 @@ const SHORTCUTS: [string, string][] = [
   ['Tab', 'Accept inline completion'],
 ]
 
-type SettingsPage = 'models' | 'appearance' | 'editor' | 'layout' | 'shortcuts'
+type SettingsPage = 'models' | 'indexing' | 'appearance' | 'editor' | 'layout' | 'shortcuts'
 
 /** Settings pages, in the order of the nav. Each page is one group of the old single list. */
 const SETTINGS_PAGES: Array<{ id: SettingsPage; label: string; icon: LucideIcon }> = [
   { id: 'models', label: 'Models & agent', icon: Cloud },
+  { id: 'indexing', label: 'Rules & index', icon: Database },
   { id: 'appearance', label: 'Appearance', icon: Monitor },
   { id: 'editor', label: 'Editor', icon: FileCode },
   { id: 'layout', label: 'Layout', icon: PanelLeft },
@@ -506,6 +508,45 @@ export function SettingsPanel() {
               />
             </SettingRow>
             <SettingRow
+              title="Review agent changes"
+              desc="Review at the end stages every agent write and lets you accept or reject each file and hunk together. Each write shows its own diff."
+            >
+              <select
+                className="field-input !w-44 !py-1 !text-xs"
+                value={settings.agentReview}
+                onChange={(e) => settings.set('agentReview', e.target.value as 'batch' | 'each')}
+                aria-label="Review agent changes"
+              >
+                <option value="batch">Review at the end</option>
+                <option value="each">Diff for each write</option>
+              </select>
+            </SettingRow>
+            <SettingRow title="Agent max steps" desc="Maximum tool-use rounds per agent request.">
+              <input
+                className="field-input !w-20 !py-1 !text-xs text-center"
+                type="number"
+                min={2}
+                max={30}
+                value={settings.agentMaxSteps}
+                onChange={(e) => {
+                  const n = Number(e.target.value)
+                  if (Number.isFinite(n)) settings.set('agentMaxSteps', Math.min(30, Math.max(2, n)))
+                }}
+              />
+            </SettingRow>
+          </div>
+        </div>
+
+        </>}
+        {page === 'indexing' && <>
+        <SectionTitle
+          icon={Database}
+          title="Workspace index"
+          desc="How the AI finds code in your project."
+        />
+        <div className="card">
+          <div className="flex flex-col gap-3">
+            <SettingRow
               title="Workspace mode"
               desc="Cursor: the agent searches a codebase index and reads the lines it needs. Classic: the whole relevant files are put in every prompt."
             >
@@ -537,36 +578,22 @@ export function SettingsPanel() {
                 <EmbeddingStatus />
               </div>
             </SettingRow>
-            <SettingRow
-              title="Review agent changes"
-              desc="Review at the end stages every agent write and lets you accept or reject each file and hunk together. Each write shows its own diff."
-            >
-              <select
-                className="field-input !w-44 !py-1 !text-xs"
-                value={settings.agentReview}
-                onChange={(e) => settings.set('agentReview', e.target.value as 'batch' | 'each')}
-                aria-label="Review agent changes"
-              >
-                <option value="batch">Review at the end</option>
-                <option value="each">Diff for each write</option>
-              </select>
-            </SettingRow>
-            <SettingRow title="Agent max steps" desc="Maximum tool-use rounds per agent request.">
-              <input
-                className="field-input !w-20 !py-1 !text-xs text-center"
-                type="number"
-                min={2}
-                max={30}
-                value={settings.agentMaxSteps}
-                onChange={(e) => {
-                  const n = Number(e.target.value)
-                  if (Number.isFinite(n)) settings.set('agentMaxSteps', Math.min(30, Math.max(2, n)))
-                }}
-              />
-            </SettingRow>
           </div>
         </div>
 
+        <SectionTitle icon={FileCode} title="Rules" desc="Standing instructions for the AI, written by you." />
+        <div className="card text-xs leading-relaxed text-[var(--text-dim)]">
+          <p>
+            Put a project rules file in the root, or <span className="font-mono">.cursor/rules/*.mdc</span> files with
+            <span className="font-mono"> alwaysApply</span>, <span className="font-mono">globs</span> and
+            <span className="font-mono"> description</span> in the header.
+          </p>
+          <p className="mt-2">
+            Mention a rule with <span className="font-mono">@rule:name</span> to apply it to one request. The index
+            and the agent skip anything in <span className="font-mono">.gitignore</span> and
+            <span className="font-mono"> .cursorignore</span>.
+          </p>
+        </div>
         </>}
         {page === 'appearance' && <>
         <SectionTitle icon={Monitor} title="Appearance" />

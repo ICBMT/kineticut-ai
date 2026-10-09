@@ -14,14 +14,16 @@ export interface CursorContextOptions {
   k?: number
   /** Pull codebase snippets for the question (chat). Agent mode searches with its tools instead. */
   retrieve?: boolean
+  /** Describe the open project in one line. Manual mode turns this off. */
+  identity?: boolean
 }
 
 export async function cursorContextFor(
   folder: string,
   query: string,
-  { k = 6, retrieve = true }: CursorContextOptions = {},
+  { k = 6, retrieve = true, identity = true }: CursorContextOptions = {},
 ): Promise<{ block: string | null; files: string[] }> {
-  const snap = await api.projectIndex.get(folder).catch(() => null)
+  const snap = identity ? await api.projectIndex.get(folder).catch(() => null) : null
   const header: string[] = []
   if (snap) {
     header.push(`About the open project "${snap.name}"${snap.purpose ? `: ${snap.purpose}` : '.'}`)
@@ -34,7 +36,8 @@ export async function cursorContextFor(
   if (hits.length) {
     parts.push(`Relevant code from the codebase index (search again with the codebase_search tool for more):\n\n${formatHits(hits)}`)
   }
-  const mentioned = await mentionBlockFor(query, folder, snap?.entries ?? [])
+  const entries = snap?.entries ?? (await api.projectIndex.get(folder).then((s) => s.entries, () => []))
+  const mentioned = await mentionBlockFor(query, folder, entries)
   if (mentioned) parts.push(mentioned)
   return { block: parts.length ? parts.join('\n\n') : null, files }
 }

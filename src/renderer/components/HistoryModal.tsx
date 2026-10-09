@@ -3,7 +3,7 @@
  * have had, grouped by project, so you can get back to earlier work.
  */
 import { useMemo, useState } from 'react'
-import { Bot, FolderOpen, FolderX, MessageSquare, Trash2 } from 'lucide-react'
+import { Bot, FolderOpen, FolderX, MessageSquare, Trash2, Hand } from 'lucide-react'
 import { useAppStore } from '../store/app'
 import { useAIStore, type ChatSession } from '../store/ai'
 import { basename } from '../lib/utils'
@@ -171,7 +171,7 @@ export function HistoryModal() {
                 </div>
                 <ul className="flex flex-col gap-0.5">
                   {g.sessions.map((s) => {
-                    const Icon = s.mode === 'agent' ? Bot : MessageSquare
+                    const Icon = s.mode === 'agent' ? Bot : s.mode === 'manual' ? Hand : MessageSquare
                     const isActive = s.id === activeId
                     const running = Boolean(runs[s.id])
                     return (

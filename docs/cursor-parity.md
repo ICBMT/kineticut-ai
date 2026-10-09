@@ -22,7 +22,7 @@ the fallback.
 | 4 | Agent tools: create, edit, write, run command with approval | Done | `src/renderer/ai/agent.ts` |
 | 5 | Agent tools: delete and rename files | Done. Both ask for confirmation, refuse binary files and files with staged review changes, and are undoable from the chat (a rename is a delete plus a create). | `src/renderer/ai/agent.ts` (`delete_file`, `rename_file`, `removable`), `lib/checkpoints.ts` |
 | 6 | Agent tools: web search and docs | Partial: `fetch_url` reads a page as text (asks first; http and https only; size and time limits). No web search provider yet. | `src/shared/webFetch.mjs`, `src/main/ipc.ts`, `dev-server/index.mjs`, `src/renderer/ai/agent.ts` |
-| 7 | Modes: Agent and Ask | Done as Agent and Chat, switched from the composer footer. Manual mode missing. | `src/renderer/store/ai.ts`, `components/ChatPanel.tsx` |
+| 7 | Modes: Agent, Ask and Manual | Done: Chat (Ask), Agent, and Manual. Manual sends only what the user attaches (mentions, selection) and no retrieval, brief or tools. Switched from the composer footer. | `src/renderer/store/ai.ts`, `lib/cursorContext.ts`, `components/ChatPanel.tsx` |
 | 8 | Composer context: @Codebase, @files, @folders, @symbols, shown as removable chips | Done | `src/renderer/lib/mentions*.ts`, `components/ChatPanel.tsx` (`ComposerChips`) |
 | 9 | Composer context: @Past chats, @Docs, @Web, @Git | Partial: `@chat:<title>` (past chat transcript) and `@git` (branch, changed files, diffs) done. @Docs and @Web are part of row 6. | `src/renderer/lib/mentionContext.ts`, `lib/mentions.ts` |
 | 10 | Rules: `.cursor/rules/*.mdc` with `alwaysApply`, `globs`, `description` | Done, including manual `@rule:<name>`, which adds the full rule to the request. | `src/renderer/lib/rules.ts`, `lib/mentionContext.ts` |
@@ -36,7 +36,7 @@ the fallback.
 | 18 | Live progress: reading, writing, thinking, tool steps | Done. Each tool call is a timeline row with a readable label, live status, line ranges, result size, and expandable output. | `src/renderer/components/ChatActivity.tsx`, `components/AgentTimeline.tsx`, `lib/agentSteps.ts` |
 | 19 | Layout: activity bar, explorer, editor tabs, composer on the right, terminal | Done, but the look is not Cursor's. | `src/renderer/components/*` |
 | 20 | Visual design and density matching Cursor | Partial: neutral dark base, one radius and elevation scale, a keyboard focus ring, composer card, changes bar, step timeline. Settings and the editor chrome still to match. | `src/renderer/styles.css` |
-| 21 | Settings like Cursor: Models, Rules, Indexing, Features pages | Partial: five pages (Models & agent, Appearance, Editor, Layout, Shortcuts) with a nav row. Rules and Indexing are not separate pages yet. | `src/renderer/components/SettingsPanel.tsx` |
+| 21 | Settings like Cursor: Models, Rules, Indexing, Features pages | Done: six pages (Models & agent, Rules & index, Appearance, Editor, Layout, Shortcuts) with a nav row. | `src/renderer/components/SettingsPanel.tsx` |
 | 22 | VS Code workbench (the real Cursor base) | Not started. Submodule is pinned, not checked out. | `vscode/`, `fork/`, `FORK.md` |
 
 ## Plan

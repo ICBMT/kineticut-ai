@@ -72,6 +72,11 @@ try {
   const ring = await page.evaluate(() => getComputedStyle(document.activeElement).boxShadow)
   check('focus: keyboard focus shows a ring', ring !== 'none' && ring !== '')
 
+  // 4b. Manual mode: the footer says only attachments are sent, and the mode persists.
+  await page.getByRole('button', { name: 'Manual', exact: true }).click()
+  await page.waitForTimeout(150)
+  check('manual mode: footer explains that only attachments are sent', (await page.textContent('body')).includes('Only what you attach is sent'))
+
   // 5. Settings pages switch.
   await page.click('[aria-label="Settings"]')
   await page.waitForTimeout(300)
@@ -79,6 +84,10 @@ try {
   await page.waitForTimeout(150)
   check('settings: Editor page shows Font size', (await page.getByText('Font size', { exact: true }).count()) === 1)
   check('settings: the Models page is hidden on Editor', (await page.getByText('Default chat model').count()) === 0)
+  await page.click('.settings-nav-item:has-text("Rules & index")')
+  await page.waitForTimeout(150)
+  check('settings: Rules & index page has the workspace mode', (await page.locator('[aria-label="Workspace mode"]').count()) === 1)
+  check('settings: the embedding model moved to Rules & index', (await page.locator('[aria-label="Embedding model"]').count()) === 1)
 
   check('no runtime errors in the console', errors.length === 0)
   if (errors.length) console.log(errors.slice(0, 5))

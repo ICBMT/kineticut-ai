@@ -30,6 +30,7 @@ import {
   BookOpen,
   Folder,
   GitBranch,
+  Hand,
   MessagesSquare,
   Search,
   type LucideIcon,
@@ -714,7 +715,9 @@ export function ChatPanel() {
               text={
                 session?.mode === 'agent'
                   ? 'Agent mode can read your code, propose edits (you review them), and run commands with your approval.'
-                  : 'Chat about your code, get explanations, generate tests or refactor — powered by Ollama locally or frontier models via API.'
+                  : session?.mode === 'manual'
+                    ? 'Manual mode sends only what you attach: @ mentions and the selection. Nothing is searched for you.'
+                    : 'Chat about your code, get explanations, generate tests or refactor — powered by Ollama locally or frontier models via API.'
               }
             />
             <div className="px-3 pb-3 grid grid-cols-1 gap-1.5">
@@ -896,18 +899,29 @@ export function ChatPanel() {
             options={[
               { value: 'chat', label: 'Chat', icon: MessageSquare },
               { value: 'agent', label: 'Agent', icon: Bot },
+              { value: 'manual', label: 'Manual', icon: Hand },
             ]}
             onChange={(m) => session && ai.setMode(session.id, m)}
           />
           <span className="text-[10px] text-[var(--text-faint)]">
-            {streaming ? 'Working…' : session?.mode === 'agent' ? 'Edits wait for your review' : 'Enter to send'}
+            {streaming
+              ? 'Working…'
+              : session?.mode === 'agent'
+                ? 'Edits wait for your review'
+                : session?.mode === 'manual'
+                  ? 'Only what you attach is sent'
+                  : 'Enter to send'}
           </span>
         </div>
         </div>
         <div className="text-[9.5px] text-[var(--text-faint)] px-0.5">
           Enter to send · Shift+Enter for newline · <span className="font-mono">/</span> commands ·{' '}
           <span className="font-mono">@</span> files ·{' '}
-          {session?.mode === 'agent' ? 'Agent may propose file edits & run commands (with approval)' : 'Markdown supported'}
+          {session?.mode === 'agent'
+            ? 'Agent may propose file edits & run commands (with approval)'
+            : session?.mode === 'manual'
+              ? 'Manual: no automatic context. Use @ mentions to add files, symbols or git.'
+              : 'Markdown supported'}
         </div>
       </div>
     </div>
