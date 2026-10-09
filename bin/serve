@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#
+# Start AtlasScope's development server with real upload limits.
+#
+#   ./bin/serve                 # 150 MB uploads, port 8000
+#   ./bin/serve --port=8080     # anything atlas:serve/artisan serve accepts
+#   ATLAS_UPLOAD_MAX=1G ./bin/serve
+#
+# A one-line alias for `php artisan atlas:serve`, which sets PHP's upload limits
+# on the child server process itself — the only place they matter. Everything
+# lives in AtlasServe.php so there is no shell wrapper in the upload path.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+exec php artisan atlas:serve "$@"
