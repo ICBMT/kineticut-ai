@@ -54,6 +54,7 @@ import { useAIStore, type ChatMessage, type ToolEventEntry } from '../store/ai'
 import { describeChanges, type FileChange } from '../lib/checkpoints'
 import { relativePath } from '../lib/utils'
 import { ActivityPanel } from './ChatActivity'
+import { AgentTimeline } from './AgentTimeline'
 import { ModelSelect } from './ModelSelect'
 import { ChangesBar } from './ReviewPanel'
 import { EmptyState, IconButton, Segmented, Spinner } from './ui'
@@ -143,42 +144,6 @@ function Markdown({ text, streaming }: { text: string; streaming?: boolean }) {
 }
 
 /* ------------------------------ agent tool chips ---------------------------- */
-
-function ToolEventItem({ entry }: { entry: ToolEventEntry }) {
-  const [open, setOpen] = useState(false)
-  let argsSummary = ''
-  try {
-    const args = JSON.parse(entry.call.arguments || '{}')
-    argsSummary = String(args.path || args.command || args.query || '')
-  } catch {
-    /* ignore */
-  }
-  return (
-    <div className="my-1">
-      <button className="tool-chip" onClick={() => setOpen((v) => !v)}>
-        {entry.status === 'running' ? (
-          <Spinner size={11} />
-        ) : entry.status === 'error' ? (
-          <AlertTriangle size={11} color="var(--red)" />
-        ) : (
-          <Check size={11} color="var(--green)" />
-        )}
-        <span className="font-semibold text-[var(--text)]">{entry.call.name}</span>
-        {argsSummary && (
-          <span className="text-[var(--text-faint)] truncate max-w-[180px]">{argsSummary}</span>
-        )}
-        {entry.result && (
-          <ChevronDown size={11} className={cn('chevron-rot', open && 'open')} />
-        )}
-      </button>
-      {open && entry.result && (
-        <pre className="mt-1 max-h-44 overflow-auto rounded-lg border border-[var(--border-soft)] bg-[#0a0a12] p-2 text-[11px] leading-5 font-mono text-[var(--text-dim)]">
-          {entry.result}
-        </pre>
-      )}
-    </div>
-  )
-}
 
 /* ------------------------------ agent changes ------------------------------- */
 
@@ -421,13 +386,7 @@ function MessageView({ message, actions }: { message: ChatMessage; actions: Mess
             </div>
           </div>
         )}
-        {message.toolEvents && message.toolEvents.length > 0 && (
-          <div className="mb-1 flex flex-col items-start">
-            {message.toolEvents.map((e, i) => (
-              <ToolEventItem key={i} entry={e} />
-            ))}
-          </div>
-        )}
+        {message.toolEvents && message.toolEvents.length > 0 && <AgentTimeline events={message.toolEvents} />}
         {message.content && <Markdown text={message.content} streaming={message.pending} />}
         {message.changes && message.changes.length > 0 && (
           <ChangeCard sessionId={actions.sessionId} message={message} />

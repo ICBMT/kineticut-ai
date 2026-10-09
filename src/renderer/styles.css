@@ -1915,3 +1915,94 @@ button {
 .composer-chip-x:hover { color: var(--text); background: var(--bg-active, rgba(255, 255, 255, 0.08)); }
 .composer-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .composer-foot .segmented { transform: scale(0.92); transform-origin: left center; }
+
+/* Agent step timeline */
+.agent-timeline { margin: 4px 0 8px; font-size: 11.5px; }
+.agent-timeline-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.agent-timeline-more {
+  margin-left: auto;
+  color: var(--accent);
+  text-transform: none;
+  letter-spacing: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.agent-timeline-list { position: relative; list-style: none; margin: 0; padding: 0; }
+.agent-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: 4px;
+  padding-bottom: 2px;
+}
+.agent-step-rail {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 18px;
+  position: relative;
+  z-index: 1;
+}
+.agent-step:not(.is-last)::before {
+  content: '';
+  position: absolute;
+  left: 7.5px;
+  top: 16px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--border-soft);
+}
+.agent-step-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 4px;
+  margin-left: -4px;
+  border-radius: 6px;
+  color: var(--text-dim);
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.agent-step-main:disabled { cursor: default; }
+.agent-step-main:not(:disabled):hover { background: var(--bg-hover, rgba(255, 255, 255, 0.04)); }
+.agent-step-verb { white-space: nowrap; color: var(--text); }
+.agent-step-target {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.agent-step-detail, .agent-step-hint { white-space: nowrap; font-size: 10px; color: var(--text-faint); }
+.agent-step-hint { margin-left: auto; }
+.agent-step.is-error .agent-step-verb { color: var(--red); }
+.agent-step.is-running .agent-step-verb { color: var(--accent); }
+.agent-step-output {
+  margin: 2px 0 6px 20px;
+  max-height: 176px;
+  overflow: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+  background: #0a0a12;
+  padding: 8px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+}

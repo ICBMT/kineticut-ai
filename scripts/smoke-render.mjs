@@ -483,7 +483,16 @@ async function main() {
     const mentions = await server.ssrLoadModule('/lib/mentions.ts')
     const aiStore = (await server.ssrLoadModule('/store/ai.ts')).useAIStore
     const review = slash.expandSlash('/review')
+    const steps = await server.ssrLoadModule('/lib/agentSteps.ts')
+    const stepsOk =
+      steps.describeStep('read_file', '{"path":"a.ts","start_line":3,"end_line":9}', 'done').verb === 'Read' &&
+      steps.describeStep('read_file', '{"path":"a.ts","start_line":3,"end_line":9}', 'done').detail === 'lines 3–9' &&
+      steps.describeStep('run_command', '{"command":"npm test"}', 'running').verb === 'Running' &&
+      steps.describeStep('edit_file', '{"path":"x.ts"}', 'done').kind === 'edit' &&
+      steps.describeStep('mystery_tool', '', 'done').verb === 'mystery tool' &&
+      steps.resultHint('a\nb\n') === '2 lines'
     const pureOk =
+      stepsOk &&
       slash.slashQuery('/ex') === 'ex' &&
       slash.slashQuery('/explain now') === null &&
       slash.filterSlash('ex')[0]?.name === 'explain' &&
