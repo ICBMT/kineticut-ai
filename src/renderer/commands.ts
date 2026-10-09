@@ -10,6 +10,7 @@ import {
   BrainCircuit,
   Database,
   FileCode,
+  Undo2,
   FileDiff,
   FilePlus,
   FolderOpen,
@@ -47,6 +48,8 @@ import { editorRef } from './lib/editorRef'
 import { persistTab } from './lib/saveFile'
 import { buildUnderstanding } from './lib/projectKnowledge'
 import { refreshProjectBrief } from './lib/projectBrief'
+import { openInlineEdit } from './lib/inlineEdit'
+import { createRulesFile } from './lib/rules'
 import { basename, joinPath, relativePath, sleep } from './lib/utils'
 import { showGitChanges } from './lib/gitChanges'
 import { useAppStore } from './store/app'
@@ -301,6 +304,9 @@ export const COMMANDS: Command[] = [
   { id: 'ai.fixProblems', title: 'Fix Problems with AI', category: 'AI', icon: Wrench, keywords: 'errors warnings quickfix', run: fixProblemsFromMarkers },
   { id: 'ai.attachSelection', title: 'Attach Selection to Chat', category: 'AI', icon: MessageSquarePlus, keywords: 'context code', run: attachSelectionToChat },
   { id: 'ai.inlineCompletion', title: 'Trigger Inline Completion', category: 'AI', icon: Zap, keywords: 'ghost text suggest', run: triggerInlineCompletion },
+  { id: 'ai.inlineEdit', title: 'Edit Selection with AI', category: 'AI', icon: Wand2, shortcut: 'Ctrl+K', keywords: 'inline edit rewrite change selection cursor', run: () => openInlineEdit(editorRef.current) },
+  { id: 'ai.createRules', title: 'Create Project Rules File', category: 'AI', icon: FileCode, keywords: 'instructions agents rules conventions standing cursorrules', run: () => void createRulesFile() },
+  { id: 'ai.undoLastChanges', title: 'Undo Last AI Changes', category: 'AI', icon: Undo2, keywords: 'revert checkpoint restore agent undo turn', run: () => undoLastAgentChanges() },
 
   // Settings / app
   { id: 'settings.open', title: 'Settings', category: 'Preferences', icon: Settings, shortcut: 'Ctrl+,', keywords: 'preferences providers models', run: () => useAppStore.getState().setSidebarView('settings') },
@@ -332,6 +338,24 @@ export const COMMANDS: Command[] = [
     },
   },
 ]
+
+/** Undo the newest agent turn that still has changes in the active chat. */
+function undoLastAgentChanges(): void {
+  const ai = useAIStore.getState()
+  const session = ai.activeSession()
+  const message = [...(session?.messages ?? [])]
+    .reverse()
+    .find((m) => m.changes?.some((c) => c.status === 'applied'))
+  if (!session || !message) {
+    useAppStore.getState().toast({
+      kind: 'info',
+      title: 'Nothing to undo',
+      message: 'Agent changes in the active chat will show up here.',
+    })
+    return
+  }
+  void ai.revertChanges(session.id, message.id)
+}
 
 export function runCommand(id: string): void {
   const command = COMMANDS.find((c) => c.id === id)

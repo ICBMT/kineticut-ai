@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { runAgent, type AgentToolEvent } from '../ai/agent'
+import { api } from '../api'
+import { planUndo, recordWrite, describeChanges, type FileChange } from '../lib/checkpoints'
+import { loadRulesBlock } from '../lib/rules'
 import { streamChat } from '../ai/providers'
 import type { AIMessage, AIStreamEvent, AIToolCall } from '../ai/types'
 import {
@@ -37,6 +40,8 @@ export interface ChatMessage {
   reasoning?: string
   /** Live (and final) record of what the assistant did for this turn. */
   activity?: ChatActivity
+  /** Files the agent changed in this turn, with what they were before (for undo). */
+  changes?: FileChange[]
   createdAt: number
 }
 
@@ -94,6 +99,10 @@ interface AIState {
   regenerate(): Promise<void>
   /** Replace a user message's text and re-answer from there. */
   editAndResend(messageId: string, text: string): Promise<void>
+  /** Record a file the agent wrote, so the turn can be undone. */
+  recordAgentWrite(sessionId: string, messageId: string, write: { path: string; before: string | null; after: string }): void
+  /** Undo every change an agent turn made, leaving files the user has since edited alone. */
+  revertChanges(sessionId: string, messageId: string): Promise<void>
   /** Stream one assistant reply into `assistantId` for `query`. */
   runTurn(sessionId: string, assistantId: string, query: string): Promise<void>
   stop(): void
@@ -355,6 +364,8 @@ export const useAIStore = create<AIState>()(
             .filter((m) => m.id !== assistantId && !m.pending)
             .map(toAIMessage)
           const systemParts: string[] = []
+          const rules = await loadRulesBlock()
+          if (rules) systemParts.push(rules)
           if (brief) {
             systemParts.push(`Project context (the user's open workspace):\n${brief}`)
           }
@@ -446,6 +457,7 @@ export const useAIStore = create<AIState>()(
               maxSteps: settings.agentMaxSteps,
               signal: controller.signal,
               onEvent,
+              onWrite: (write) => get().recordAgentWrite(sessionId, assistantId, write),
             })
           } else {
             for await (const evt of streamChat({
@@ -469,6 +481,91 @@ export const useAIStore = create<AIState>()(
         } finally {
           set({ streaming: false, abort: null })
         }
+      },
+
+      recordAgentWrite: (sessionId, messageId, write) =>
+        set((s) => ({
+          sessions: s.sessions.map((sess) =>
+            sess.id !== sessionId
+              ? sess
+              : {
+                  ...sess,
+                  messages: sess.messages.map((m) =>
+                    m.id === messageId ? { ...m, changes: recordWrite(m.changes ?? [], write) } : m,
+                  ),
+                },
+          ),
+        })),
+
+      revertChanges: async (sessionId, messageId) => {
+        const message = get()
+          .sessions.find((x) => x.id === sessionId)
+          ?.messages.find((m) => m.id === messageId)
+        const changes = message?.changes ?? []
+        if (!changes.some((c) => c.status === 'applied')) return
+
+        // Read what is on disk now, so files the user edited since are kept.
+        const current = new Map<string, string | null>()
+        for (const change of changes) {
+          if (change.status !== 'applied' || current.has(change.path)) continue
+          try {
+            const res = await api.fs.read(change.path)
+            current.set(change.path, res.binary ? '' : res.content)
+          } catch {
+            current.set(change.path, null)
+          }
+        }
+        const plan = planUndo(changes, (p) => current.get(p) ?? null)
+
+        const failed: string[] = []
+        const outcome = new Map<string, FileChange['status']>()
+        for (const { change, op } of plan.ops) {
+          try {
+            if (op.kind === 'restore') await api.fs.write(op.path, op.content)
+            else await api.fs.remove(op.path).catch(() => undefined)
+            outcome.set(change.path, 'reverted')
+          } catch {
+            failed.push(change.path)
+          }
+        }
+        for (const c of plan.kept) outcome.set(c.path, 'kept')
+        for (const c of plan.unavailable) outcome.set(c.path, 'unavailable')
+
+        set((s) => ({
+          sessions: s.sessions.map((sess) =>
+            sess.id !== sessionId
+              ? sess
+              : {
+                  ...sess,
+                  messages: sess.messages.map((m) =>
+                    m.id !== messageId
+                      ? m
+                      : {
+                          ...m,
+                          changes: (m.changes ?? []).map((c) =>
+                            outcome.has(c.path) && c.status === 'applied'
+                              ? { ...c, status: outcome.get(c.path)! }
+                              : c,
+                          ),
+                        },
+                  ),
+                },
+          ),
+        }))
+
+        const reverted = plan.ops.length - failed.length
+        const kept = plan.kept.length
+        useAppStore.getState().toast({
+          kind: failed.length || kept ? 'warning' : 'success',
+          title: reverted ? `Undid ${describeChanges(changes)}` : 'Nothing to undo',
+          message:
+            [
+              kept ? `${kept} file${kept === 1 ? ' was' : 's were'} edited since and left as they are.` : '',
+              failed.length ? `Could not restore: ${failed.map((p) => p.split(/[\\/]/).pop()).join(', ')}` : '',
+            ]
+              .filter(Boolean)
+              .join(' ') || undefined,
+        })
       },
 
       stop: () => {

@@ -16,6 +16,13 @@ models via **Ollama**, frontier models (Claude, GPT, Gemini, …) via API. Built
   and runs commands (with confirmation). Every write is reviewed in a side-by-side
   diff, where you can adjust the proposal before applying it. Works with Ollama
   locally and OpenAI-compatible / Anthropic / Gemini APIs.
+- **Cursor-style workflow.** **Ctrl+K** rewrites the selected code from a short
+  instruction and shows the change as an inline diff before anything is applied.
+  Every agent turn is a **checkpoint**: the reply lists the files it changed, opens
+  them, and **Undo changes** restores them (files you edited since are left alone).
+  **Project rules** (`.kineticut/rules.md`, `AGENTS.md`, `.cursorrules`,
+  `.github/copilot-instructions.md`) are read into every request; the command
+  *Create Project Rules File* writes a starter.
 - **Starts empty, remembers everything.** Kineticut opens with no folder and no file;
   you choose what to work on. Your projects and chats are kept: **Projects & Chats**
   (`Ctrl+Alt+H`, or the history button in the AI chat header) lists every project you
@@ -95,6 +102,7 @@ built-in **mock Ollama** so the whole AI pipeline works out of the box.
 | `Ctrl+`` ` | Toggle terminal panel |
 | `Ctrl+B` | Toggle sidebar |
 | `Ctrl+I` | Explain code with AI |
+| `Ctrl+K` | Edit the selection (or line) with AI, reviewed in place (`Ctrl+Enter` accept, `Esc` reject) |
 | `Ctrl+Shift+A` | Toggle agent mode |
 | `Ctrl+Alt+B` | Toggle AI chat sidebar |
 | `Ctrl+Shift+I` | Format document |

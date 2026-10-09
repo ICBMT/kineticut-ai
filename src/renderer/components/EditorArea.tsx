@@ -16,6 +16,8 @@ import {
 } from 'lucide-react'
 import { api } from '../api'
 import { attachSelectionToChat } from '../lib/aiActions'
+import { openInlineEdit } from '../lib/inlineEdit'
+import { InlineEditWidget } from './InlineEditWidget'
 import { autoSaveNow, scheduleAutoSave } from '../lib/saveFile'
 import { EditorBreadcrumbs } from './Breadcrumbs'
 import { editorRef } from '../lib/editorRef'
@@ -424,6 +426,9 @@ export function EditorArea() {
       editorRef.current = editor
     })
 
+    // Ctrl+K: edit the selection (or the current line) with AI, reviewed in place.
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () => openInlineEdit(editor))
+
     editor.onDidChangeModelContent(() => {
       const model = editor.getModel()
       if (!model || model.uri.scheme !== 'file') return
@@ -516,6 +521,17 @@ export function EditorArea() {
           Ask AI
         </button>
       )}
+      {askAiAnchor && (
+        <button
+          className="ask-ai-btn ask-ai-btn-edit"
+          style={{ left: askAiAnchor.x + 84, top: askAiAnchor.y }}
+          onClick={() => openInlineEdit(editorRef.current)}
+          title="Edit this code with AI (Ctrl+K)"
+        >
+          Edit <span className="inline-edit-kbd">Ctrl+K</span>
+        </button>
+      )}
+      <InlineEditWidget />
     </div>
   )
 }

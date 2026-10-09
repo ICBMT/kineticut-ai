@@ -9,6 +9,7 @@ import {
   Copy,
   Database,
   FileCode,
+  FileDiff,
   History,
   Lightbulb,
   MessageSquare,
@@ -37,6 +38,8 @@ import { expandSlash, filterSlash, slashQuery, type SlashCommand } from '../lib/
 import { activeMention, insertMention, loadMentionFiles, rankFiles, type MentionMatch } from '../lib/mentions'
 import { useAppStore } from '../store/app'
 import { useAIStore, type ChatMessage, type ToolEventEntry } from '../store/ai'
+import { describeChanges, type FileChange } from '../lib/checkpoints'
+import { relativePath } from '../lib/utils'
 import { ActivityPanel } from './ChatActivity'
 import { ModelSelect } from './ModelSelect'
 import { EmptyState, IconButton, Segmented, Spinner } from './ui'
@@ -163,6 +166,74 @@ function ToolEventItem({ entry }: { entry: ToolEventEntry }) {
   )
 }
 
+/* ------------------------------ agent changes ------------------------------- */
+
+const CHANGE_STATE: Record<FileChange['status'], { text: string; tone: string }> = {
+  applied: { text: '', tone: '' },
+  reverted: { text: 'undone', tone: 'text-[var(--text-faint)] line-through' },
+  kept: { text: 'you edited it since, kept', tone: 'text-[var(--yellow,#d29922)]' },
+  unavailable: { text: 'too large to undo', tone: 'text-[var(--text-faint)]' },
+}
+
+/**
+ * What an agent turn changed, with one-click undo. Files are opened from the
+ * list, and undo never overwrites a file the user has edited since.
+ */
+function ChangeCard({ sessionId, message }: { sessionId: string; message: ChatMessage }) {
+  const folder = useAppStore((s) => s.folder)
+  const changes = message.changes ?? []
+  const anyApplied = changes.some((c) => c.status === 'applied')
+  const [busy, setBusy] = useState(false)
+  const rel = (p: string) => (folder ? relativePath(folder, p) : p)
+  return (
+    <div className="change-card">
+      <div className="change-card-head">
+        <FileDiff size={12} />
+        <span className="change-card-title">
+          {anyApplied ? describeChanges(changes) : 'Changes undone'}
+        </span>
+        {anyApplied && (
+          <button
+            className="btn !py-0.5 !px-2 text-[10px]"
+            disabled={busy || message.pending}
+            title="Restore every file this reply changed to how it was before"
+            onClick={async () => {
+              setBusy(true)
+              try {
+                await useAIStore.getState().revertChanges(sessionId, message.id)
+              } finally {
+                setBusy(false)
+              }
+            }}
+          >
+            <RotateCw size={10} /> Undo changes
+          </button>
+        )}
+      </div>
+      <ul className="change-card-list">
+        {changes.map((c) => {
+          const state = CHANGE_STATE[c.status]
+          const openable = c.status !== 'reverted' || c.before !== null
+          return (
+            <li key={c.path}>
+              <button
+                className="change-card-file"
+                disabled={!openable}
+                title={c.path}
+                onClick={() => openFileLink(c.path)}
+              >
+                <span className="font-mono">{rel(c.path)}</span>
+                <span className="change-card-kind">{c.before === null && !c.tooLarge ? 'new' : 'edited'}</span>
+              </button>
+              {state.text && <span className={cn('change-card-state', state.tone)}>{state.text}</span>}
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
 /* ------------------------------ message actions ----------------------------- */
 
 function copyText(text: string): void {
@@ -171,6 +242,8 @@ function copyText(text: string): void {
 }
 
 interface MessageActions {
+  /** The chat this message belongs to. */
+  sessionId: string
   /** Last assistant reply, and no reply is streaming. */
   canRegenerate: boolean
   /** Last user message, and no reply is streaming. */
@@ -300,6 +373,9 @@ function MessageView({ message, actions }: { message: ChatMessage; actions: Mess
           </div>
         )}
         {message.content && <Markdown text={message.content} streaming={message.pending} />}
+        {message.changes && message.changes.length > 0 && (
+          <ChangeCard sessionId={actions.sessionId} message={message} />
+        )}
         {!message.content && message.pending && !message.activity && (
           <div className="flex items-center gap-1.5 py-1">
             <span className="typing-dot" />
@@ -548,6 +624,7 @@ export function ChatPanel() {
   }
 
   const actions: MessageActions = {
+    sessionId: session?.id ?? '',
     canRegenerate: !streaming,
     canEdit: !streaming,
     onRegenerate: () => void ai.regenerate(),

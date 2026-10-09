@@ -45,6 +45,23 @@ const dom = new JSDOM('<!doctype html><html><head></head><body><div id="root"></
   virtualConsole,
 })
 
+// jsdom has no canvas. Monaco measures text and pixel ratio through a 2D context,
+// so give it a stand-in context (the real app runs in a browser with a canvas).
+{
+  const fakeCtx = new Proxy(
+    {},
+    {
+      get: (_t, key) => {
+        if (key === 'webkitBackingStorePixelRatio') return 1
+        if (key === 'measureText') return () => ({ width: 8 })
+        return () => undefined
+      },
+      set: () => true,
+    },
+  )
+  dom.window.HTMLCanvasElement.prototype.getContext = () => fakeCtx
+}
+
 const g = globalThis
 for (const key of Object.getOwnPropertyNames(dom.window)) {
   if (key in g) continue
@@ -664,7 +681,8 @@ async function main() {
     aiHist.useAIStore.setState({ sessions: aiHist.useAIStore.getState().sessions.slice(1) })
 
     useAppStore.getState().setHistoryOpen(true)
-    await sleep(400)
+    // The modal renders on the next React commit; give it time on a busy machine.
+    for (let i = 0; i < 20 && !/Chats \(\d+\)/.test(doc.body.textContent || ''); i++) await sleep(150)
     historyUiOk = /Chats \(\d+\)/.test(doc.body.textContent || '') && /Projects \(\d+\)/.test(doc.body.textContent || '')
     useAppStore.getState().setHistoryOpen(false)
   } catch (err) {
@@ -725,6 +743,23 @@ async function main() {
   }
   checks.push(['ensureModel fills a pre-created empty model (empty-file regression)', emptyModelFilled])
 
+  // Regression (found in the browser): the editor creates the file's model WHILE
+  // ensureModel awaits the read. ensureModel must fill that model, not throw
+  // "Cannot add model because it already exists" (which showed the file as binary).
+  let raceFilled = false
+  try {
+    const monaco = await server.ssrLoadModule('monaco-editor')
+    const uri = monaco.Uri.file(TEST_FILE)
+    monaco.editor.getModels().forEach((m) => m.dispose())
+    const pending = monacoLib.ensureModel(TEST_FILE)
+    monaco.editor.createModel('', 'json', uri) // created after ensureModel started
+    const res = await pending
+    raceFilled = !!res.model && !res.binary && res.model.getValue().includes('"kineticut-ai"')
+  } catch (err) {
+    console.log('  (race check error:', String(err).slice(0, 200), ')')
+  }
+  checks.push(['ensureModel survives a model created during its read (no false binary)', raceFilled])
+
   // Split-editor groups: the store supports multiple groups with tabs.
   // (Store-level only — mounting a real Monaco editor needs canvas APIs that
   // jsdom does not implement; the editor itself is exercised in real browsers.)
@@ -770,6 +805,78 @@ async function main() {
     console.log('  (edit-rule check failed:', String(err).slice(0, 200), ')')
   }
   checks.push(['edit_file/create_file: exact-text edit rules + tool surface', editRulesOk])
+
+  // Cursor-style workflow: agent checkpoints (undo a turn), project rules, and
+  // inline edit (Ctrl+K). The rules are pure, so each is checked directly.
+  let workflowOk = false
+  try {
+    const cp = await server.ssrLoadModule('/lib/checkpoints.ts')
+    const rl = await server.ssrLoadModule('/lib/rules.ts')
+    const ie = await server.ssrLoadModule('/lib/inlineEdit.ts')
+    const cmds = await server.ssrLoadModule('/commands.ts')
+
+    // Checkpoints: the first write keeps the original; undo restores or removes.
+    let changes = cp.recordWrite([], { path: '/p/a.ts', before: 'v0', after: 'v1' }, 1)
+    changes = cp.recordWrite(changes, { path: '/p/a.ts', before: 'v1', after: 'v2' }, 2)
+    changes = cp.recordWrite(changes, { path: '/p/new.ts', before: null, after: 'n1' }, 3)
+    const liveFiles = { '/p/a.ts': 'v2', '/p/new.ts': 'n1' }
+    const plan = cp.planUndo(changes, (p) => liveFiles[p] ?? null)
+    const restoreOk = plan.ops.some((o) => o.op.kind === 'restore' && o.op.path === '/p/a.ts' && o.op.content === 'v0')
+    const removeOk = plan.ops.some((o) => o.op.kind === 'remove' && o.op.path === '/p/new.ts')
+    // The user edits a.ts after the agent: that file is kept, not overwritten.
+    const edited = cp.planUndo(changes, (p) => (p === '/p/a.ts' ? 'user edit' : liveFiles[p] ?? null))
+    const keptOk = edited.kept.some((c) => c.path === '/p/a.ts') && !edited.ops.some((o) => o.change.path === '/p/a.ts')
+    // Too large to store: reported as unavailable, never restored as "created".
+    const big = cp.recordWrite([], { path: '/p/big.ts', before: 'x'.repeat(cp.MAX_CHECKPOINT_CHARS + 1), after: 'y' }, 4)
+    const bigPlan = cp.planUndo(big, () => 'y')
+    const unavailableOk = bigPlan.unavailable.length === 1 && bigPlan.ops.length === 0
+    const summaryOk = cp.describeChanges(changes) === '2 files: 1 edited, 1 created'
+    const hashOk = cp.hashContent('abc') === cp.hashContent('abc') && cp.hashContent('abc') !== cp.hashContent('abd')
+
+    // Rules: priority order, relative paths from the index, and truncation.
+    const tree = {
+      name: 'p', path: '/p', type: 'directory', size: 0, mtime: 0,
+      children: [
+        { name: 'AGENTS.md', path: '/p/AGENTS.md', type: 'file', size: 1, mtime: 0 },
+        { name: 'src', path: '/p/src', type: 'directory', size: 0, mtime: 0, children: [
+          { name: 'a.ts', path: '/p/src/a.ts', type: 'file', size: 1, mtime: 0 },
+        ] },
+        { name: 'rules.md', path: '/p/.kineticut/rules.md', type: 'file', size: 1, mtime: 0 },
+      ],
+    }
+    const rel = rl.relativeFilePaths(tree, '/p')
+    const rulesOk =
+      rel.has('src/a.ts') && rel.has('AGENTS.md') &&
+      rl.pickRuleFile(rel) === '.kineticut/rules.md' &&
+      rl.pickRuleFile(new Set(['AGENTS.md'])) === 'AGENTS.md' &&
+      rl.pickRuleFile(new Set(['src/a.ts'])) === null &&
+      rl.clampRules('a\n'.repeat(6000), 100).truncated === true &&
+      rl.clampRules('short', 100).text === 'short'
+
+    // Inline edit: the prompt carries the selection, the instruction and the rules;
+    // a stale selection is never applied; context windows stay bounded.
+    const msgs = ie.buildInlineEditMessages({
+      instruction: 'add comments', path: '/p/a.ts', language: 'typescript',
+      selection: 'const x = 1', before: 'above', after: 'below', rules: 'Project rules from AGENTS.md: be terse',
+    })
+    const inlineOk =
+      msgs[0].role === 'system' && /Project rules from AGENTS.md/.test(msgs[0].content) &&
+      /<selection>\nconst x = 1\n<\/selection>/.test(msgs[1].content) &&
+      /Instruction: add comments/.test(msgs[1].content) &&
+      ie.canApplyInlineEdit('same', 'same') && !ie.canApplyInlineEdit('changed', 'same') &&
+      ie.contextWindow('z'.repeat(10000), 'before').length <= ie.INLINE_CONTEXT_CHARS
+
+    const ids = cmds.COMMANDS.map((c) => c.id)
+    const commandsOk = ['ai.inlineEdit', 'ai.createRules', 'ai.undoLastChanges'].every((id) => ids.includes(id))
+
+    workflowOk = restoreOk && removeOk && keptOk && unavailableOk && summaryOk && hashOk && rulesOk && inlineOk && commandsOk
+    if (!workflowOk) {
+      console.log('  (workflow parts:', JSON.stringify({ restoreOk, removeOk, keptOk, unavailableOk, summaryOk, hashOk, rulesOk, inlineOk, commandsOk }), ')')
+    }
+  } catch (err) {
+    console.log('  (workflow check failed:', String(err).slice(0, 300), ')')
+  }
+  checks.push(['agent checkpoints undo a turn, project rules load, inline edit guards', workflowOk])
 
   checks.push(['no runtime errors', realErrors.length === 0])
 

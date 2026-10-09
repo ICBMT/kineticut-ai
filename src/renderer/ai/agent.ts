@@ -162,6 +162,13 @@ export type AgentToolEvent =
   | { type: 'tool_start'; call: AIToolCall }
   | { type: 'tool_end'; call: AIToolCall; result: string; error?: boolean }
 
+/** One file the agent actually wrote. `before` is null when the file was created. */
+export interface AgentWrite {
+  path: string
+  before: string | null
+  after: string
+}
+
 export interface AgentRunArgs {
   provider: ProviderConfig
   model: string
@@ -171,10 +178,12 @@ export interface AgentRunArgs {
   /** Project brief about the open workspace, injected into the system prompt. */
   contextBrief?: string | null
   onEvent: (evt: AIStreamEvent | AgentToolEvent) => void
+  /** Called after every write the user approved, so the turn can be undone. */
+  onWrite?: (write: AgentWrite) => void
 }
 
 export async function runAgent(args: AgentRunArgs): Promise<void> {
-  const { provider, model, history, maxSteps = 8, signal, contextBrief, onEvent } = args
+  const { provider, model, history, maxSteps = 8, signal, contextBrief, onEvent, onWrite } = args
   const systemPrompt = contextBrief
     ? `${AGENT_SYSTEM_PROMPT}\n\nProject context (the user's open workspace):\n${contextBrief}`
     : AGENT_SYSTEM_PROMPT
@@ -210,7 +219,7 @@ export async function runAgent(args: AgentRunArgs): Promise<void> {
     for (const call of assistant.toolCalls) {
       if (signal?.aborted) return
       onEvent({ type: 'tool_start', call })
-      const { result, error } = await executeToolCall(call)
+      const { result, error } = await executeToolCall(call, onWrite)
       onEvent({ type: 'tool_end', call, result, error })
       messages.push({ role: 'tool', toolCallId: call.id, name: call.name, content: result })
     }
@@ -219,7 +228,10 @@ export async function runAgent(args: AgentRunArgs): Promise<void> {
 
 /* ------------------------------ tool execution ----------------------------- */
 
-async function executeToolCall(call: AIToolCall): Promise<{ result: string; error?: boolean }> {
+async function executeToolCall(
+  call: AIToolCall,
+  onWrite?: (write: AgentWrite) => void,
+): Promise<{ result: string; error?: boolean }> {
   let args: any
   try {
     args = JSON.parse(call.arguments || '{}')
@@ -262,8 +274,8 @@ async function executeToolCall(call: AIToolCall): Promise<{ result: string; erro
       case 'write_file': {
         const target = resolvePath(args.path)
         const content = String(args.content ?? '')
-        const current = (await readCurrent(target)) ?? ''
-        return proposeWrite(target, current, content, 'Agent wants to write a file')
+        const prior = await readCurrent(target, true)
+        return proposeWrite(target, prior ?? '', prior, content, 'Agent wants to write a file', onWrite)
       }
       case 'edit_file': {
         const target = resolvePath(args.path)
@@ -273,7 +285,7 @@ async function executeToolCall(call: AIToolCall): Promise<{ result: string; erro
         }
         const edit = applyTextEdit(current, String(args.old_text ?? ''), String(args.new_text ?? ''), args.replace_all === true)
         if (!edit.ok) return { result: `Error: ${edit.reason}`, error: true }
-        const outcome = await proposeWrite(target, current, edit.content, 'Agent wants to edit a file')
+        const outcome = await proposeWrite(target, current, current, edit.content, 'Agent wants to edit a file', onWrite)
         if (outcome.error) return outcome
         return { result: `Edited ${args.path}: ${edit.replacements} replacement${edit.replacements === 1 ? '' : 's'}.` }
       }
@@ -286,7 +298,7 @@ async function executeToolCall(call: AIToolCall): Promise<{ result: string; erro
             error: true,
           }
         }
-        return proposeWrite(target, '', String(args.content ?? ''), 'Agent wants to create a file')
+        return proposeWrite(target, '', null, String(args.content ?? ''), 'Agent wants to create a file', onWrite)
       }
       case 'run_command': {
         const command = String(args.command || '')
@@ -386,13 +398,16 @@ async function readCurrent(target: string, missingAsNull = false): Promise<strin
 async function proposeWrite(
   target: string,
   current: string,
+  before: string | null,
   content: string,
   title: string,
+  onWrite?: (write: AgentWrite) => void,
 ): Promise<{ result: string; error?: boolean }> {
   const app = useAppStore.getState()
   const settings = useSettingsStore.getState()
   if (settings.agentAutoApprove) {
     await api.fs.write(target, content)
+    onWrite?.({ path: target, before, after: content })
     return { result: `Wrote ${displayPath(target)} (${content.length} bytes)` }
   }
   // The diff's Apply button calls onApply with what the user accepted (which
@@ -420,6 +435,7 @@ async function proposeWrite(
       error: true,
     }
   }
+  onWrite?.({ path: target, before, after: written as string })
   return { result: `Wrote ${displayPath(target)} (${(written as string).length} bytes)` }
 }
 

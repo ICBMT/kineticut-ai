@@ -132,6 +132,17 @@ function cannedReply(messages, tools) {
     return { text: "return items.map((item) => item?.value ?? null).filter(Boolean)\n", toolCalls: null }
   }
 
+  // Inline edit (Ctrl+K): return the selection with the instruction as a comment,
+  // so the test can check exactly what the user accepted.
+  if (/code editing assistant/i.test(system)) {
+    const raw = lastUserMessage(messages)
+    const sel = raw.match(/<selection>\n([\s\S]*?)\n<\/selection>/)
+    const instr = raw.match(/Instruction: (.*)/)
+    if (sel && instr) {
+      return { text: `// ${instr[1].trim()}\n${sel[1]}`, toolCalls: null }
+    }
+  }
+
   // Test script for feature building: create a file, then edit it, then summarize.
   if (tools && tools.length && /mock:create-feature/.test(user)) {
     const last = [...messages].reverse().find((m) => m.role === 'tool')
