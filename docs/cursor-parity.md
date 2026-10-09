@@ -37,7 +37,7 @@ the fallback.
 | 19 | Layout: activity bar, explorer, editor tabs, composer on the right, terminal | Done. Checked in a headless browser: path breadcrumbs above the tabs, status bar with index state, composer on the right. Remaining differences are visual taste. | `src/renderer/components/*` |
 | 20 | Visual design and density matching Cursor | Partial: neutral dark base, one radius and elevation scale, a keyboard focus ring, composer card, changes bar, step timeline. Settings and the editor chrome still to match. | `src/renderer/styles.css` |
 | 21 | Settings like Cursor: Models, Rules, Indexing, Features pages | Done: six pages (Models & agent, Rules & index, Appearance, Editor, Layout, Shortcuts) with a nav row. | `src/renderer/components/SettingsPanel.tsx` |
-| 22 | VS Code workbench (the real Cursor base) | Not started. Submodule is pinned, not checked out. | `vscode/`, `fork/`, `FORK.md` |
+| 22 | VS Code workbench (the real Cursor base) | Not started. Submodule is pinned, not checked out. Blocked in the build sandbox: 3 GB RAM and 2 CPUs. A VS Code build needs far more memory and time, so this phase needs a larger machine. | `vscode/`, `fork/`, `FORK.md` |
 
 ## Plan
 
