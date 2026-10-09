@@ -4,6 +4,7 @@
  * Implements just enough of the Ollama API for the Kineticut AI preview:
  *   GET  /api/tags                  — list "installed" models
  *   POST /api/show                  — model info
+ *   POST /api/embed                 — deterministic embeddings (hashed words)
  *   POST /api/pull                  — fake pull with NDJSON progress
  *   POST /v1/chat/completions       — OpenAI-compatible streaming chat (SSE)
  *   POST /api/chat                  — native Ollama streaming chat (NDJSON)
@@ -240,6 +241,24 @@ const server = http.createServer(async (req, res) => {
 
   if (path === '/api/tags' && method === 'GET') {
     return sendJson(res, 200, { models: MODELS })
+  }
+
+  if (path === '/api/embed' && method === 'POST') {
+    // Deterministic stand-in for an embedding model: hashed word counts, L2-normalised.
+    const body = JSON.parse(await readBody(req) || '{}')
+    const inputs = Array.isArray(body.input) ? body.input : [body.input ?? '']
+    const DIM = 256
+    const embeddings = inputs.map((text) => {
+      const v = new Array(DIM).fill(0)
+      for (const w of String(text).toLowerCase().match(/[a-z][a-z0-9]{2,}/g) ?? []) {
+        let h = 2166136261
+        for (let i = 0; i < w.length; i++) h = Math.imul(h ^ w.charCodeAt(i), 16777619)
+        v[(h >>> 0) % DIM] += 1
+      }
+      const norm = Math.hypot(...v) || 1
+      return v.map((x) => x / norm)
+    })
+    return sendJson(res, 200, { model: body.model, embeddings })
   }
 
   if (path === '/api/show' && method === 'POST') {

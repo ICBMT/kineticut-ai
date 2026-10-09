@@ -19,6 +19,7 @@
     "dist": "npm run build && electron-builder",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "smoke": "node scripts/smoke-render.mjs",
+    "smoke:codebase": "node scripts/smoke-codebase.mjs",
     "icon": "node scripts/make-icon.mjs",
     "mock:ollama": "node dev-server/mock-ollama.mjs"
   },

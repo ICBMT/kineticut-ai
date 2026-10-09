@@ -6,7 +6,16 @@ import { homedir } from 'node:os'
 import { extname, join, relative } from 'node:path'
 import chokidar from 'chokidar'
 import { simpleGit } from 'simple-git'
-import { projectFile, projectIndexSnapshot, rescanProjectIndex, setFileSummaries } from './projectIndex'
+import {
+  codebaseBuild,
+  codebasePending,
+  codebaseSearch,
+  codebaseSetVectors,
+  projectFile,
+  projectIndexSnapshot,
+  rescanProjectIndex,
+  setFileSummaries,
+} from './projectIndex'
 import type {
   ExecResult,
   FileEntry,
@@ -865,6 +874,21 @@ export function registerIpc(getWin: () => BrowserWindow | null) {
   /* ------------------------------ project index ----------------------------- */
 
   ipcMain.handle('project-index:get', async (_e, root: string) => projectIndexSnapshot(root))
+  ipcMain.handle('codebase:build', async (_e, root: string) => codebaseBuild(root))
+  ipcMain.handle(
+    'codebase:search',
+    async (
+      _e,
+      p: { root: string; query: string; k?: number; model?: string | null; queryVector?: number[] | null },
+    ) =>
+    codebaseSearch(p.root, p.query, { k: p.k, model: p.model, queryVector: p.queryVector }),
+  )
+  ipcMain.handle('codebase:pending', async (_e, p: { root: string; model: string; limit?: number }) =>
+    codebasePending(p.root, { model: p.model, limit: p.limit }),
+  )
+  ipcMain.handle('codebase:vectors', async (_e, p: { root: string; model: string; items: { id: string; hash: string; vector: number[] }[] }) =>
+    codebaseSetVectors(p.root, { model: p.model, items: p.items }),
+  )
   ipcMain.handle('project-index:rescan', async (_e, root: string) => rescanProjectIndex(root))
   ipcMain.handle('project-index:file', async (_e, payload: { root: string; rel: string }) =>
     projectFile(payload.root, payload.rel),

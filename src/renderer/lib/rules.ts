@@ -72,29 +72,135 @@ Keep them short and specific. Delete any line that does not apply.
 - (things the AI must never change or do)
 `
 
+/** A Cursor rule file (.cursor/rules/*.mdc): frontmatter plus a body. */
+export interface CursorRule {
+  path: string
+  description: string
+  globs: string[]
+  alwaysApply: boolean
+  body: string
+}
+
+/** Parse `---` frontmatter (description, globs, alwaysApply) and the body. */
+export function parseCursorRule(path: string, text: string): CursorRule {
+  const clean = text.replace(/\r\n/g, '\n')
+  const m = /^---\n([\s\S]*?)\n---\n?/.exec(clean)
+  const meta: Record<string, string> = {}
+  if (m) {
+    for (const line of m[1].split('\n')) {
+      const kv = /^([A-Za-z_]+):\s*(.*)$/.exec(line.trim())
+      if (kv) meta[kv[1]] = kv[2].trim()
+    }
+  }
+  const body = m ? clean.slice(m[0].length) : clean
+  const globs = (meta.globs ?? '')
+    .split(',')
+    .map((g) => g.trim().replace(/^["']|["']$/g, ''))
+    .filter(Boolean)
+  return {
+    path,
+    description: (meta.description ?? '').replace(/^["']|["']$/g, ''),
+    globs,
+    alwaysApply: /^true$/i.test(meta.alwaysApply ?? ''),
+    body: body.trim(),
+  }
+}
+
+/** A glob (`**\/*.ts`, `src/**\/*.tsx`) as a regular expression over forward-slash paths. */
+export function globToRegExp(glob: string): RegExp {
+  let re = ''
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i]
+    if (c === '*' && glob[i + 1] === '*') {
+      if (glob[i + 2] === '/') {
+        re += '(?:.*/)?'
+        i += 2
+      } else {
+        re += '.*'
+        i += 1
+      }
+    } else if (c === '*') re += '[^/]*'
+    else if (c === '?') re += '[^/]'
+    else re += c.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+  }
+  return new RegExp(`^${re}$`)
+}
+
+/** Rules that apply to the open file: always-on rules and rules whose globs match it. */
+export function rulesFor(rules: CursorRule[], activeRel: string | null): { always: CursorRule[]; requested: CursorRule[] } {
+  const always = rules.filter(
+    (r) => r.alwaysApply || (activeRel !== null && r.globs.some((g) => globToRegExp(g).test(activeRel))),
+  )
+  // Description-only rules are offered to the agent by name; it reads them when relevant.
+  const requested = rules.filter((r) => !r.alwaysApply && r.globs.length === 0 && r.description && !always.includes(r))
+  return { always, requested }
+}
+
 let cache: { key: string; at: number; block: string } | null = null
 
+/** Path of the file open in the editor, relative to the folder, forward-slashed. */
+function activeRelPath(folder: string): string | null {
+  const active = useEditorStore.getState().activeTab()?.path
+  if (!active || !active.startsWith(folder)) return null
+  return active.slice(folder.length).replace(/^[\\/]+/, '').replace(/\\/g, '/')
+}
+
 /**
- * The rules block for the open project, or '' when there is none. The file is
- * read at most every few seconds, so each chat turn does not hit the disk twice.
+ * The rules block for the open project, or '' when there is none: the classic rules
+ * file, plus Cursor rules (.cursor/rules/*.mdc) that apply to the open file. The
+ * files are read at most every few seconds, so each chat turn does not hit the disk twice.
  */
 export async function loadRulesBlock(): Promise<string> {
   const { folder, fileIndex } = useAppStore.getState()
   if (!folder) return ''
-  const rel = pickRuleFile(relativeFilePaths(fileIndex, folder))
-  if (!rel) return ''
-  if (cache && cache.key === `${folder}|${rel}` && Date.now() - cache.at < 5000) return cache.block
-  let block = ''
-  try {
-    const res = await api.fs.read(joinPath(folder, rel))
-    if (!res.binary && res.content.trim()) {
-      const { text, truncated } = clampRules(res.content)
-      block = `Project rules from ${rel} (standing instructions from the user; follow them):\n${text}${truncated ? '\n(rules were truncated to fit)' : ''}`
+  const rels = relativeFilePaths(fileIndex, folder)
+  const classicRel = pickRuleFile(rels)
+  const ruleFiles = [...rels].filter((r) => /^\.cursor\/rules\/.+\.mdc?$/.test(r)).sort()
+  const active = activeRelPath(folder)
+  const key = `${folder}|${classicRel ?? ''}|${ruleFiles.join(',')}|${active ?? ''}`
+  if (cache && cache.key === key && Date.now() - cache.at < 5000) return cache.block
+
+  const parts: string[] = []
+  if (classicRel) {
+    try {
+      const res = await api.fs.read(joinPath(folder, classicRel))
+      if (!res.binary && res.content.trim()) {
+        const { text, truncated } = clampRules(res.content)
+        parts.push(
+          `Project rules from ${classicRel} (standing instructions from the user; follow them):\n${text}${truncated ? '\n(rules were truncated to fit)' : ''}`,
+        )
+      }
+    } catch {
+      /* unreadable rules file: skip it */
     }
-  } catch {
-    block = ''
   }
-  cache = { key: `${folder}|${rel}`, at: Date.now(), block }
+
+  const rules: CursorRule[] = []
+  for (const rel of ruleFiles) {
+    try {
+      const res = await api.fs.read(joinPath(folder, rel))
+      if (!res.binary) rules.push(parseCursorRule(rel, res.content))
+    } catch {
+      /* skip */
+    }
+  }
+  const { always, requested } = rulesFor(rules, active)
+  if (always.length) {
+    const body = always
+      .map((r) => `--- ${r.path}${r.description ? ` (${r.description})` : ''}\n${clampRules(r.body, 4000).text}`)
+      .join('\n\n')
+    parts.push(`Cursor rules that apply (follow them):\n${clampRules(body, MAX_RULES_CHARS).text}`)
+  }
+  if (requested.length) {
+    parts.push(
+      `Other rules you can read when they are relevant (read_file the path):\n${requested
+        .map((r) => `- ${r.path}: ${r.description}`)
+        .join('\n')}`,
+    )
+  }
+
+  const block = parts.join('\n\n')
+  cache = { key, at: Date.now(), block }
   return block
 }
 

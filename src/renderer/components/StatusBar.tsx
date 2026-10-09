@@ -4,6 +4,7 @@ import { useAppStore } from '../store/app'
 import { currentActivityLabel, useAIStore } from '../store/ai'
 import { resolveChatModel, useSettingsStore } from '../store/settings'
 import { languageLabel } from '../lib/languages'
+import { useCodebaseStatus } from '../lib/codebase'
 import { Spinner } from './ui'
 
 export function StatusBar() {
@@ -12,6 +13,7 @@ export function StatusBar() {
   const problems = useAppStore((s) => s.problems)
   const sel = useAppStore((s) => s.selectionInfo)
   const streaming = useAIStore((s) => s.streaming)
+  const codebase = useCodebaseStatus()
   const runningCount = useAIStore((s) => Object.keys(s.runs).length)
   const liveLabel = useAIStore((s) => currentActivityLabel(s))
   const settings = useSettingsStore()
@@ -45,6 +47,27 @@ export function StatusBar() {
         )}
       </div>
       <div className="sb-group">
+        {folder && codebase.phase === 'indexing' && (
+          <span className="sb-item" title="The codebase index is updating" role="status">
+            <Spinner size={11} />
+            Indexing…
+          </span>
+        )}
+        {folder && codebase.phase === 'ready' && codebase.stats && (
+          <span
+            className="sb-item"
+            title={
+              codebase.embeddingModel
+                ? `Hybrid search with ${codebase.embeddingModel}. Chunks embedded: ${codebase.embedded} of ${codebase.total}.`
+                : 'Keyword codebase search. Set an embedding model in Settings for meaning-based search.'
+            }
+          >
+            {codebase.stats.files} files · {codebase.stats.chunks} chunks
+            {codebase.embeddingModel && codebase.total > 0 && codebase.embedded < codebase.total
+              ? ` · embedding ${Math.round((codebase.embedded / codebase.total) * 100)}%`
+              : ''}
+          </span>
+        )}
         {streaming && (
           <span className="sb-item" title="What the AI is doing right now" role="status" aria-live="polite">
             <Spinner size={11} />

@@ -17,7 +17,7 @@ export interface MentionMatch {
   query: string
 }
 
-export type MentionKind = 'file' | 'folder' | 'symbol'
+export type MentionKind = 'file' | 'folder' | 'symbol' | 'codebase'
 
 export interface MentionItem {
   kind: MentionKind
@@ -72,6 +72,14 @@ export function rankMentions(index: MentionIndex, query: string, limit = 8): Men
   }
 
   const scored: Array<{ item: MentionItem; score: number }> = []
+  // @codebase: search the whole codebase index, like Cursor's @Codebase. Offered first.
+  const cb = query ? fuzzyScore(query, 'codebase') : 0
+  if (cb !== null) {
+    scored.push({
+      item: { kind: 'codebase', value: 'codebase', label: '@codebase', detail: 'search the whole codebase index' },
+      score: query ? cb + 1000 : 1e6,
+    })
+  }
   for (const f of index.files) {
     const score = query ? fuzzyScore(query, f) : 0
     if (score === null) continue

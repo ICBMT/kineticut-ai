@@ -276,7 +276,7 @@ export const COMMANDS: Command[] = [
     useAIStore.getState().newSession('chat')
     useAppStore.getState().setChatVisible(true)
   } },
-  { id: 'ai.focusChat', title: 'Focus AI Chat Input', category: 'AI', icon: MessageSquarePlus, shortcut: 'Ctrl+Alt+L', keywords: 'focus type message composer', run: () => {
+  { id: 'ai.focusChat', title: 'Focus AI Chat Input', category: 'AI', icon: MessageSquarePlus, shortcut: 'Ctrl+L', keywords: 'focus type message composer chat cursor', run: () => {
     useAppStore.getState().setChatVisible(true)
     // The composer mounts with the sidebar; focus once it is in the DOM.
     window.setTimeout(() => window.dispatchEvent(new Event('kinetic:focus-chat')), 60)
@@ -289,7 +289,16 @@ export const COMMANDS: Command[] = [
     useAppStore.getState().setChatVisible(true)
     void buildUnderstanding()
   } },
-  { id: 'ai.toggleAgent', title: 'Toggle Agent Mode', category: 'AI', icon: Bot, shortcut: 'Ctrl+Shift+A', keywords: 'tools autonomous', run: () => {
+  { id: 'ai.composer', title: 'Agent Composer', category: 'AI', icon: Bot, shortcut: 'Ctrl+I', keywords: 'agent composer cursor build feature edit multi file', run: () => {
+    const ai = useAIStore.getState()
+    const session = ai.activeSession()
+    if (!session) ai.newSession('agent')
+    else if (session.mode !== 'agent') ai.setMode(session.id, 'agent')
+    useAppStore.getState().setSidebarView('chat')
+    useAppStore.getState().setChatVisible(true)
+    window.setTimeout(() => window.dispatchEvent(new Event('kinetic:focus-chat')), 60)
+  } },
+  { id: 'ai.toggleAgent', title: 'Toggle Agent Mode', category: 'AI', icon: Bot, keywords: 'tools autonomous', run: () => {
     const ai = useAIStore.getState()
     const session = ai.activeSession()
     if (!session) {
@@ -299,11 +308,11 @@ export const COMMANDS: Command[] = [
     }
     useAppStore.getState().setSidebarView('chat')
   } },
-  { id: 'ai.explain', title: 'Explain Code', category: 'AI', icon: Sparkles, shortcut: 'Ctrl+I', keywords: 'understand selection', run: explainSelection },
+  { id: 'ai.explain', title: 'Explain Code', category: 'AI', icon: Sparkles, keywords: 'understand selection', run: explainSelection },
   { id: 'ai.refactor', title: 'Refactor Selection', category: 'AI', icon: Wand2, keywords: 'improve clean code', run: refactorSelection },
   { id: 'ai.tests', title: 'Generate Tests', category: 'AI', icon: FileCode, keywords: 'unit test coverage', run: generateTests },
   { id: 'ai.fixProblems', title: 'Fix Problems with AI', category: 'AI', icon: Wrench, keywords: 'errors warnings quickfix', run: fixProblemsFromMarkers },
-  { id: 'ai.attachSelection', title: 'Attach Selection to Chat', category: 'AI', icon: MessageSquarePlus, keywords: 'context code', run: attachSelectionToChat },
+  { id: 'ai.attachSelection', title: 'Attach Selection to Chat', category: 'AI', icon: MessageSquarePlus, shortcut: 'Ctrl+Shift+L', keywords: 'context code selection cursor', run: attachSelectionToChat },
   { id: 'ai.inlineCompletion', title: 'Trigger Inline Completion', category: 'AI', icon: Zap, keywords: 'ghost text suggest', run: triggerInlineCompletion },
   { id: 'ai.inlineEdit', title: 'Edit Selection with AI', category: 'AI', icon: Wand2, shortcut: 'Ctrl+K', keywords: 'inline edit rewrite change selection cursor', run: () => openInlineEdit(editorRef.current) },
   { id: 'ai.createRules', title: 'Create Project Rules File', category: 'AI', icon: FileCode, keywords: 'instructions agents rules conventions standing cursorrules', run: () => void createRulesFile() },
@@ -376,9 +385,11 @@ export const KEYBINDINGS: { combo: string; commandId: string }[] = [
   { combo: 'mod+shift+s', commandId: 'file.saveAll' },
   { combo: 'mod+w', commandId: 'file.closeTab' },
   { combo: 'mod+,', commandId: 'settings.open' },
-  { combo: 'mod+i', commandId: 'ai.explain' },
+  { combo: 'mod+i', commandId: 'ai.composer' },
   { combo: 'mod+shift+a', commandId: 'ai.toggleAgent' },
+  { combo: 'mod+l', commandId: 'ai.focusChat' },
   { combo: 'mod+alt+l', commandId: 'ai.focusChat' },
+  { combo: 'mod+shift+l', commandId: 'ai.attachSelection' },
   { combo: 'mod+shift+i', commandId: 'editor.format' },
   { combo: 'mod+g', commandId: 'editor.goToLine' },
   { combo: 'mod+alt+/', commandId: 'help.shortcuts' },

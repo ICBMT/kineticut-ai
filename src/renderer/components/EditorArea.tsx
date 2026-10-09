@@ -17,6 +17,7 @@ import {
 import { api } from '../api'
 import { attachSelectionToChat } from '../lib/aiActions'
 import { openInlineEdit } from '../lib/inlineEdit'
+import { runCommand } from '../commands'
 import { InlineEditWidget } from './InlineEditWidget'
 import { autoSaveNow, scheduleAutoSave } from '../lib/saveFile'
 import { EditorBreadcrumbs } from './Breadcrumbs'
@@ -429,6 +430,10 @@ export function EditorArea() {
 
     // Ctrl+K: edit the selection (or the current line) with AI, reviewed in place.
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () => openInlineEdit(editor))
+    // Cursor-style chat shortcuts. Monaco would otherwise consume Ctrl+L / Ctrl+Shift+L itself.
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyL, () => runCommand('ai.focusChat'))
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyI, () => runCommand('ai.composer'))
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyL, () => runCommand('ai.attachSelection'))
 
     editor.onDidChangeModelContent((e: any) => {
       const model = editor.getModel()

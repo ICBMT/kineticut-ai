@@ -20,9 +20,22 @@ models via **Ollama**, frontier models (Claude, GPT, Gemini, …) via API. Built
   instruction and shows the change as an inline diff before anything is applied.
   Every agent turn is a **checkpoint**: the reply lists the files it changed, opens
   them, and **Undo changes** restores them (files you edited since are left alone).
-  **Project rules** (`.kineticut/rules.md`, `AGENTS.md`, `.cursorrules`,
-  `.github/copilot-instructions.md`) are read into every request; the command
-  *Create Project Rules File* writes a starter.
+  **Project rules** are read into requests: `.cursor/rules/*.mdc` (with `alwaysApply`,
+  `globs` and `description` frontmatter, so a rule applies when you open a matching
+  file), plus `.kineticut/rules.md`, `AGENTS.md`, `.cursorrules` and
+  `.github/copilot-instructions.md`. The command *Create Project Rules File* writes a starter.
+- **Codebase index, like Cursor's.** The project is split into chunks and indexed in the
+  background (incremental, so only changed files are re-read). A question searches the
+  index with keyword matching (BM25) and, when an embedding model is set in
+  *Settings → Embedding model* (for example `nomic-embed-text` on Ollama), also by
+  meaning, fused with reciprocal-rank fusion. The keyword path makes no AI call. Embeddings are
+  computed when the index builds, so a question adds one small embedding call at most.
+  The agent gets a `codebase_search` tool and reads only the line ranges it needs (`read_file`
+  takes `start_line` and `end_line`). *Settings → Workspace mode → Classic* restores the
+  previous whole-file retrieval.
+- **Chat shortcuts like Cursor's.** **Ctrl+L** focuses the chat, **Ctrl+I** opens the agent
+  composer, and **Ctrl+Shift+L** attaches the selected code to the chat. The `@codebase`
+  mention searches the whole index.
 - **Review every agent change at once.** By default (*Settings → Review agent changes →
   Review at the end*) agent writes are **staged**, not written: later steps in the
   turn build on the staged text, and a banner in the chat opens the review
@@ -56,7 +69,7 @@ models via **Ollama**, frontier models (Claude, GPT, Gemini, …) via API. Built
 - **Chat ergonomics** — copy, regenerate, edit-and-resend the last prompt, retry on
   error, `/explain` `/tests` `/review` `/fix` `/docs` `/clear` slash commands, and an
   `@file` picker over the project index.
-- **AI code actions** — *Explain* (Ctrl+I), *Refactor selection*, *Generate tests*,
+- **AI code actions** — *Explain* (command palette), *Refactor selection*, *Generate tests*,
   and a **✦ Fix with AI** quick-fix on editor warnings/errors. Heavy edits are always
   reviewed in a diff modal first.
 - **IDE-grade editing** — Monaco (the VS Code editor engine) with TypeScript
@@ -115,15 +128,16 @@ built-in **mock Ollama** so the whole AI pipeline works out of the box.
 | `Ctrl+S` / `Ctrl+Shift+S` | Save / Save all |
 | `Ctrl+`` ` | Toggle terminal panel |
 | `Ctrl+B` | Toggle sidebar |
-| `Ctrl+I` | Explain code with AI |
-| `Ctrl+K` | Edit the selection (or line) with AI, reviewed in place (`Ctrl+Enter` accept, `Esc` reject) |
+| `Ctrl+I` | Agent composer: ask the agent to build or change code across files |
+| `Ctrl+Shift+L` | Attach the selected code to the chat |
+| `Ctrl+K` | Edit the selection (or line) with AI, reviewed in place (`Ctrl+Enter` accept, `Esc` reject). Overrides Monaco's `Ctrl+K Ctrl+C`-style chords |
 | `Ctrl+Shift+A` | Toggle agent mode |
 | `Ctrl+Alt+R` | Review staged AI changes (accept or reject per hunk) |
 | `Ctrl+Alt+B` | Toggle AI chat sidebar |
 | `Ctrl+Shift+I` | Format document |
 | `Ctrl+G` | Go to line |
 | `Ctrl+,` | Settings |
-| `Ctrl+Alt+L` | Focus the AI chat input |
+| `Ctrl+L` / `Ctrl+Alt+L` | Focus the AI chat input |
 | `Ctrl+Alt+/` | Keyboard shortcuts reference (searchable) |
 | `Tab` | Accept inline completion |
 
@@ -159,6 +173,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design and
 | `npm run dist` | Package installers with electron-builder |
 | `npm run typecheck` | TypeScript check |
 | `npm run smoke` | Headless render + regression test (needs `dev:web` running) |
+| `npm run smoke:codebase` | Codebase index test: keyword search, embeddings, restart (no browser) |
 | `npm run icon` | Regenerate `assets/icon.png` from `assets/icon.svg` |
 | `npm run mock:ollama` | Run only the mock Ollama server (:11434) |
 

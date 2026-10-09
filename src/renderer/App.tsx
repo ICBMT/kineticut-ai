@@ -14,6 +14,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { ConfirmModal, DiffModal, PromptModal } from './components/modals'
 import { ShortcutsModal } from './components/ShortcutsModal'
 import { HistoryModal } from './components/HistoryModal'
+import { buildCodebase } from './lib/codebase'
 import { ReviewPanel } from './components/ReviewPanel'
 import { EditorArea } from './components/EditorArea'
 import { QuickOpen } from './components/QuickOpen'
@@ -62,6 +63,7 @@ export function App() {
   useEffect(() => {
     if (!folder) return
     void maybeStartKnowledgeKeeper()
+    void buildCodebase(folder)
     let disposed = false
     let unwatch: (() => void) | null = null
     let timer: ReturnType<typeof setTimeout> | null = null
@@ -84,6 +86,7 @@ export function App() {
             .catch(() => {})
           void syncOpenModelsWithDisk()
           void useAppStore.getState().refreshGit()
+          void buildCodebase(folder)
         }, 300)
       })
     })()

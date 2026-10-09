@@ -142,6 +142,22 @@ const api: KineticAPI = {
     setSummaries: (root: string, items: { rel: string; summary: string; summaryAt: number }[]) =>
       ipcRenderer.invoke('project-index:summaries', { root, items }) as Promise<void>,
   },
+  codebase: {
+    build: (root: string) =>
+      ipcRenderer.invoke('codebase:build', root) as Promise<import('../shared/types').CodebaseStats>,
+    search: (root: string, query: string, opts: { k?: number; model?: string | null; queryVector?: number[] | null } = {}) =>
+      ipcRenderer.invoke('codebase:search', { root, query, ...opts }) as ReturnType<
+        import('../shared/types').KineticAPI['codebase']['search']
+      >,
+    pending: (root: string, opts: { model: string; limit?: number }) =>
+      ipcRenderer.invoke('codebase:pending', { root, ...opts }) as ReturnType<
+        import('../shared/types').KineticAPI['codebase']['pending']
+      >,
+    setVectors: (root: string, opts: { model: string; items: { id: string; hash: string; vector: number[] }[] }) =>
+      ipcRenderer.invoke('codebase:vectors', { root, ...opts }) as ReturnType<
+        import('../shared/types').KineticAPI['codebase']['setVectors']
+      >,
+  },
   win: {
     minimize: () => ipcRenderer.send('win:minimize'),
     maximize: () => ipcRenderer.send('win:maximize'),

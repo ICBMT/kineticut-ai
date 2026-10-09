@@ -145,6 +145,23 @@ export interface ProjectIndexEntry {
   summaryAt?: number
 }
 
+/** A chunk of a file in the codebase index (lines are 1-based, inclusive). */
+export interface CodeChunk {
+  id: string
+  rel: string
+  startLine: number
+  endLine: number
+  text: string
+  score?: number
+}
+
+export interface CodebaseStats {
+  files: number
+  chunks: number
+  changed: number
+  removed: number
+}
+
 /** Snapshot of the project memory (see src/shared/projectMemory.mjs). */
 export interface ProjectIndexSnapshot {
   folder: string
@@ -270,6 +287,24 @@ export interface KineticAPI {
       root: string,
       items: { rel: string; summary: string; summaryAt: number }[],
     ): Promise<void>
+  }
+  /** Codebase index: chunks searchable by keyword and, with a model, by meaning. */
+  codebase: {
+    build(root: string): Promise<CodebaseStats>
+    search(
+      root: string,
+      query: string,
+      opts?: { k?: number; model?: string | null; queryVector?: number[] | null },
+    ): Promise<{ hits: CodeChunk[]; semantic: boolean; stats: CodebaseStats | null }>
+    /** Chunks still lacking an embedding for `model`, for the client to embed. */
+    pending(
+      root: string,
+      opts: { model: string; limit?: number },
+    ): Promise<{ items: { id: string; hash: string; text: string }[]; total: number; embedded: number }>
+    setVectors(
+      root: string,
+      opts: { model: string; items: { id: string; hash: string; vector: number[] }[] },
+    ): Promise<{ stored: number; total: number }>
   }
   win: {
     minimize(): void

@@ -8,6 +8,7 @@ import { codeProfileLine, dirLine, recallFile } from '../lib/projectKnowledge'
 import { languageForPath } from '../lib/languages'
 import { joinPath, truncate } from '../lib/utils'
 import { applyTextEdit } from '../lib/textEdit'
+import { formatHits, searchCodebase } from '../lib/codebase'
 import { useAppStore } from '../store/app'
 import { useEditorStore } from '../store/editor'
 import { useSettingsStore } from '../store/settings'
@@ -35,13 +36,29 @@ export const AGENT_TOOLS: AIToolDef[] = [
   },
   {
     name: 'read_file',
-    description: 'Read the full contents of a file.',
+    description:
+      'Read a file, or only the lines start_line to end_line (1-based, inclusive). Prefer a line range for large files: find the lines with codebase_search or search_code first.',
     parameters: {
       type: 'object',
       properties: {
         path: { type: 'string', description: 'Absolute path or path relative to the workspace root.' },
+        start_line: { type: 'integer', description: 'First line to return (1-based).' },
+        end_line: { type: 'integer', description: 'Last line to return (inclusive).' },
       },
       required: ['path'],
+    },
+  },
+  {
+    name: 'codebase_search',
+    description:
+      'Search the whole codebase index by meaning and keywords (like Cursor codebase search). Returns the best matching code snippets with file and line ranges. Use it to find where something is implemented before reading files.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'What you are looking for, in natural language or with identifiers.' },
+        limit: { type: 'integer', description: 'Number of snippets (1-15). Default 8.' },
+      },
+      required: ['query'],
     },
   },
   {
@@ -154,6 +171,7 @@ How to work:
 - Understand before you change. Use the project context, project_map and search_code to find the code that already does something similar, and follow its pattern (naming, folder layout, how it is registered or wired up).
 - To build a feature: plan the files in one short list, create the new files with create_file, then wire them into the existing code (routes, registries, imports, menus, commands) with edit_file.
 - To change an existing file, use edit_file with old_text copied exactly from the file. Keep old_text small but unique. Use write_file only for a small file or a full rewrite. Never guess file contents: recall_file or read_file first.
+- To find code, call codebase_search first (it searches the whole project by meaning and keywords), then read only the lines you need with read_file start_line/end_line. Use search_code for exact text.
 - The user reviews every change. A write is either shown in a diff at once, or "staged" for one review at the end (the tool result says which). Staged changes are not on disk yet, but later reads and edits see them. If the user rejects a change, do not repeat it: explain the change and ask how to proceed.
 - Verify when the project has a check (typecheck, tests, build): run it with run_command and fix what it reports. run_command is non-interactive only; never run destructive commands without asking first.
 - Answer concisely at the end: what you created or changed (with file paths), what you verified, and what the user should check next.`
@@ -265,10 +283,37 @@ async function executeToolCall(
         const target = resolvePath(args.path)
         // Read what the agent has already proposed, so edits build on it.
         const staged = stagedContent(target)
-        if (staged !== undefined) return { result: truncate(staged, 60000) }
-        const res = await api.fs.read(target)
-        if (res.binary) return { result: 'Error: file is binary.', error: true }
-        return { result: truncate(res.content, 60000) }
+        const content = staged !== undefined ? staged : null
+        let text = content
+        if (text === null) {
+          const res = await api.fs.read(target)
+          if (res.binary) return { result: 'Error: file is binary.', error: true }
+          text = res.content
+        }
+        const from = Number(args.start_line)
+        const to = Number(args.end_line)
+        if (Number.isFinite(from) || Number.isFinite(to)) {
+          const lines = text.split('\n')
+          const a = Math.max(1, Number.isFinite(from) ? Math.floor(from) : 1)
+          const b = Math.min(lines.length, Number.isFinite(to) ? Math.floor(to) : lines.length)
+          if (a > lines.length) return { result: `Error: the file has ${lines.length} lines.`, error: true }
+          const body = lines
+            .slice(a - 1, b)
+            .map((l, i) => `${a + i}: ${l}`)
+            .join('\n')
+          return { result: truncate(`${displayPath(target)} lines ${a}-${b} of ${lines.length}:\n${body}`, 60000) }
+        }
+        return { result: truncate(text, 60000) }
+      }
+      case 'codebase_search': {
+        const query = String(args.query || '').trim()
+        if (!query) return { result: 'Error: query is empty.', error: true }
+        if (!folder) return { result: 'Error: no project is open.', error: true }
+        const limit = Math.min(15, Math.max(1, Number(args.limit) || 8))
+        const { hits, semantic } = await searchCodebase(folder, query, limit)
+        if (hits.length === 0) return { result: 'No matching code in the index.' }
+        const header = semantic ? 'Matches (keyword and meaning):' : 'Matches (keyword search):'
+        return { result: truncate(`${header}\n\n${formatHits(hits, 40000)}`, 40000) }
       }
       case 'search_code': {
         const results = await api.search.query(

@@ -226,6 +226,12 @@ export function createHttpApi(): KineticAPI {
       file: (root, rel) => http<any>(`/api/project-index/file${qs({ root, rel })}`),
       setSummaries: (root, items) => post<any>('/api/project-index/summaries', { root, items }),
     },
+    codebase: {
+      build: (root) => post<any>('/api/codebase/build', { root }),
+      search: (root, query, opts = {}) => post<any>('/api/codebase/search', { root, query, ...opts }),
+      pending: (root, opts) => post<any>('/api/codebase/pending', { root, ...opts }),
+      setVectors: (root, opts) => post<any>('/api/codebase/vectors', { root, ...opts }),
+    },
     win: {
       minimize: () => {},
       maximize: () => {},

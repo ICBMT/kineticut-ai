@@ -166,6 +166,21 @@ process.on('unhandledRejection', (err) => {
   console.error('unhandled rejection:', err)
 })
 
+// Monaco schedules render and worker timers that throw under jsdom (no real
+// canvas, no worker URL resolver) once the event loop yields after the editor
+// was tested. Errors raised from inside monaco-editor are counted and reported;
+// any other uncaught exception still fails the run.
+process.on('uncaughtException', (err) => {
+  const stack = String(err?.stack || err)
+  if (stack.includes('node_modules/monaco-editor/')) {
+    monacoWorkerNoise++
+    return
+  }
+  console.error('uncaught exception:', err)
+  process.exit(1)
+})
+let monacoWorkerNoise = 0
+
 /* ---------------------------------- run ------------------------------------ */
 
 async function main() {
@@ -973,6 +988,91 @@ async function main() {
   }
   checks.push(['batch review, mentions, next-edit and background runs', reviewOk])
 
+  // Codebase index (Cursor-style): lexical search with no AI call, optional
+  // embeddings stored per model, and Cursor rules. Restart persistence is in smoke-codebase.mjs.
+  let codebaseOk = false
+  try {
+    const { pathToFileURL } = await import('node:url')
+    const fs = (await import('node:fs')).promises
+    const os = await import('node:os')
+    const path = await import('node:path')
+    const ci = await import(pathToFileURL(path.resolve('src/shared/codebaseIndex.mjs')).href)
+    const rl = await server.ssrLoadModule('/lib/rules.ts')
+    const root = path.resolve('.')
+    const SKIP = new Set(['node_modules', '.git', 'dist', 'out', 'build', 'dist-web'])
+    const walk = async (dir, out = []) => {
+      for (const d of await fs.readdir(dir, { withFileTypes: true })) {
+        if (SKIP.has(d.name)) continue
+        const p = path.join(dir, d.name)
+        if (d.isDirectory()) await walk(p, out)
+        else if (/\.(ts|tsx|mjs)$/.test(d.name)) out.push(p)
+      }
+      return out
+    }
+    const projectIndex = {
+      async snapshot(r) {
+        const entries = []
+        for (const f of await walk(r)) {
+          const st = await fs.stat(f)
+          entries.push({ path: f, rel: path.relative(r, f), size: st.size, mtime: st.mtimeMs })
+        }
+        return { entries }
+      },
+      async file(r, rel) {
+        return { content: await fs.readFile(path.join(r, rel), 'utf8'), binary: false }
+      },
+    }
+    const cacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kc-smoke-cb-'))
+    const idx = ci.createCodebaseIndex({ cacheDir, projectIndex })
+    await idx.build(root, { force: true })
+    const lex = await idx.search(root, 'persist vectors serialise Map', { k: 3 })
+    const lexicalOk = lex.hits.length > 0 && lex.hits[0].rel === 'src/shared/codebaseIndex.mjs' && lex.semantic === false
+
+    // Embeddings: a stand-in vector per chunk, stored for one model only.
+    const DIM = 8
+    const embed = (t) => {
+      const v = new Array(DIM).fill(0)
+      for (const w of t.toLowerCase().match(/[a-z]{3,}/g) ?? []) {
+        let h = 0
+        for (const c of w) h = (h * 31 + c.charCodeAt(0)) >>> 0
+        v[h % DIM]++
+      }
+      const n = Math.hypot(...v) || 1
+      return v.map((x) => x / n)
+    }
+    const pend = await idx.pending(root, { model: 'smoke-embed', limit: 100000 })
+    const stored = await idx.setVectors(root, {
+      model: 'smoke-embed',
+      items: pend.items.map((c) => ({ id: c.id, hash: c.hash, vector: embed(c.text) })),
+    })
+    const semanticOk =
+      stored.stored === pend.total &&
+      (await idx.search(root, 'persist', { k: 3, queryVector: embed('persist'), model: 'smoke-embed' })).semantic === true &&
+      (await idx.search(root, 'persist', { k: 3, queryVector: embed('persist'), model: 'other-model' })).semantic === false
+
+    // Cursor rules: frontmatter, glob matching against the open file, and always-on rules.
+    const ruleA = rl.parseCursorRule('.cursor/rules/ts.mdc', '---\ndescription: TS style\nglobs: src/**/*.ts, *.tsx\nalwaysApply: false\n---\nUse const.\n')
+    const ruleB = rl.parseCursorRule('.cursor/rules/all.mdc', '---\nalwaysApply: true\n---\nBe terse.')
+    const ruleC = rl.parseCursorRule('.cursor/rules/ask.mdc', '---\ndescription: How to add a route\n---\nSteps.')
+    const globOk = rl.globToRegExp('src/**/*.ts').test('src/a/b.ts') && !rl.globToRegExp('src/**/*.ts').test('lib/x.ts') && rl.globToRegExp('*.tsx').test('a.tsx') && !rl.globToRegExp('*.tsx').test('x/a.tsx')
+    const ruleSel = rl.rulesFor([ruleA, ruleB, ruleC], 'src/app/main.ts')
+    const ruleSelOther = rl.rulesFor([ruleA, ruleB, ruleC], 'docs/readme.md')
+    const rulesCursorOk =
+      ruleA.globs.length === 2 && ruleB.alwaysApply && ruleA.body === 'Use const.' && globOk &&
+      ruleSel.always.map((r) => r.path).join() === '.cursor/rules/ts.mdc,.cursor/rules/all.mdc' &&
+      ruleSel.requested.map((r) => r.path).join() === '.cursor/rules/ask.mdc' &&
+      ruleSelOther.always.map((r) => r.path).join() === '.cursor/rules/all.mdc'
+
+    codebaseOk = lexicalOk && semanticOk && rulesCursorOk
+    if (!codebaseOk) {
+      console.log('  (codebase parts:', JSON.stringify({ lexicalOk, semanticOk, rulesCursorOk }), ')')
+    }
+  } catch (err) {
+    console.log('  (codebase check failed:', String(err).slice(0, 300), ')')
+  }
+  checks.push(['codebase index: lexical search, embeddings, cursor rules', codebaseOk])
+
+  if (monacoWorkerNoise) console.log(`  (ignored ${monacoWorkerNoise} jsdom timer error(s) raised inside monaco-editor)`)
   checks.push(['no runtime errors', realErrors.length === 0])
 
   let failed = 0

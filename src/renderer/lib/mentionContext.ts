@@ -6,6 +6,7 @@
 import { api } from '../api'
 import type { ProjectIndexEntry } from '../../shared/types'
 import { parseMentionTokens, SYMBOL_PREFIX } from './mentions'
+import { formatHits, searchCodebase, stripMentions } from './codebase'
 
 const FOLDER_FILE_CAP = 60
 const SYMBOL_HITS_CAP = 3
@@ -27,6 +28,9 @@ export async function mentionBlockFor(
     if (token.toLowerCase().startsWith(SYMBOL_PREFIX)) {
       const name = token.slice(SYMBOL_PREFIX.length)
       if (name) parts.push(await symbolBlock(folder, name, entries))
+    } else if (token.toLowerCase() === 'codebase') {
+      const { hits } = await searchCodebase(folder, stripMentions(query), 8)
+      if (hits.length) parts.push(`Codebase search results for the question:\n\n${formatHits(hits)}`)
     } else if (token.endsWith('/') && token.length > 1) {
       parts.push(folderBlock(token.slice(0, -1).replace(/^\.?\//, ''), entries))
     }

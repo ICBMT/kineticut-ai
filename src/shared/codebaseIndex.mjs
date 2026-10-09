@@ -1,0 +1,339 @@
+/**
+ * Codebase index: the workspace split into overlapping line chunks, searchable
+ * by keyword (BM25) and, when an embedding model is configured, by meaning.
+ *
+ * This is the layer the agent uses to find code (`codebase_search`), the way
+ * Cursor's codebase index does. It is incremental: a file is re-chunked only when
+ * its mtime or size changes, and chunks are keyed by content hash, so embedding
+ * vectors survive restarts and are recomputed only for chunks whose text changed.
+ *
+ * Shared by the Electron main process and the browser-preview dev server. It
+ * reads files through a project-memory service, so it has no Electron dependency.
+ */
+import { createHash } from 'node:crypto'
+import { promises as fs } from 'node:fs'
+import { join } from 'node:path'
+
+export const CHUNK_LINES = 60
+export const CHUNK_STEP = 48
+export const CHUNK_MAX_CHARS = 3000
+/** Beyond this many chunks the index stops adding files (keeps memory bounded). */
+export const MAX_CHUNKS = 120_000
+const REBUILD_AFTER_MS = 2_000
+const PERSIST_DELAY_MS = 1500
+
+const STOP = new Set([
+  'the', 'and', 'for', 'with', 'this', 'that', 'from', 'are', 'was', 'not', 'but', 'you', 'all', 'can',
+  'has', 'have', 'its', 'our', 'out', 'use', 'how', 'what', 'when', 'where', 'which', 'who', 'why',
+  'does', 'did', 'into', 'about', 'there', 'their', 'then', 'than', 'also', 'just', 'any', 'some',
+  'let', 'var', 'const', 'return', 'new', 'null', 'undefined', 'true', 'false', 'import', 'export',
+])
+
+/** Lowercase terms from text: identifiers, their camelCase and snake_case parts. */
+export function tokenize(text) {
+  const out = []
+  for (const raw of String(text).split(/[^A-Za-z0-9_]+/)) {
+    if (!raw) continue
+    const whole = raw.toLowerCase()
+    if (whole.length >= 2 && !STOP.has(whole)) out.push(whole)
+    const parts = raw
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+      .split(/[_\s]+/)
+    for (const part of parts) {
+      const p = part.toLowerCase()
+      if (p.length >= 2 && p !== whole && !STOP.has(p)) out.push(p)
+    }
+  }
+  return out
+}
+
+/** Overlapping windows of lines. Each chunk knows its line range. */
+export function chunkText(text) {
+  const lines = String(text).split('\n')
+  const chunks = []
+  for (let start = 0; start < lines.length; start += CHUNK_STEP) {
+    const end = Math.min(lines.length, start + CHUNK_LINES)
+    const body = lines.slice(start, end).join('\n')
+    if (body.trim()) {
+      chunks.push({ startLine: start + 1, endLine: end, text: body.slice(0, CHUNK_MAX_CHARS) })
+    }
+    if (end >= lines.length) break
+  }
+  return chunks
+}
+
+export function hashText(text) {
+  return createHash('sha1').update(text).digest('hex').slice(0, 16)
+}
+
+/** BM25 over chunks. Returns the top `k` chunk ids with scores. */
+export function bm25Search(chunks, query, k = 8) {
+  const terms = [...new Set(tokenize(query))]
+  if (terms.length === 0 || chunks.length === 0) return []
+  const postings = new Map() // term -> [[docIndex, tf]]
+  const lengths = new Float64Array(chunks.length)
+  let total = 0
+  chunks.forEach((c, i) => {
+    const toks = tokenize(`${c.rel} ${c.text}`)
+    lengths[i] = toks.length
+    total += toks.length
+    const tf = new Map()
+    for (const t of toks) tf.set(t, (tf.get(t) || 0) + 1)
+    for (const t of terms) {
+      const f = tf.get(t)
+      if (!f) continue
+      if (!postings.has(t)) postings.set(t, [])
+      postings.get(t).push([i, f])
+    }
+  })
+  const avg = total / chunks.length || 1
+  const N = chunks.length
+  const k1 = 1.2
+  const b = 0.75
+  const scores = new Float64Array(N)
+  for (const t of terms) {
+    const list = postings.get(t)
+    if (!list) continue
+    const df = list.length
+    const idf = Math.log(1 + (N - df + 0.5) / (df + 0.5))
+    for (const [i, f] of list) {
+      scores[i] += (idf * (f * (k1 + 1))) / (f + k1 * (1 - b + (b * lengths[i]) / avg))
+    }
+  }
+  return [...scores.entries()]
+    .filter(([, s]) => s > 0)
+    .sort((x, y) => y[1] - x[1])
+    .slice(0, k)
+    .map(([i, score]) => ({ index: i, score }))
+}
+
+function cosine(a, b) {
+  let dot = 0
+  let na = 0
+  let nb = 0
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i]
+    na += a[i] * a[i]
+    nb += b[i] * b[i]
+  }
+  return na && nb ? dot / Math.sqrt(na * nb) : 0
+}
+
+/**
+ * Hybrid ranking: BM25 and vector similarity fused by reciprocal rank, so
+ * neither scale dominates. Without vectors this is BM25 alone.
+ */
+export function hybridRank(chunks, query, { k = 8, queryVector = null, vectors = null } = {}) {
+  const lexical = bm25Search(chunks, query, 40)
+  if (!queryVector || !vectors) return lexical.slice(0, k).map((h) => ({ ...chunks[h.index], score: h.score }))
+  const semantic = chunks
+    .map((c, i) => ({ i, s: vectors.get(c.id) ? cosine(queryVector, vectors.get(c.id)) : -1 }))
+    .filter((x) => x.s > 0)
+    .sort((a, b) => b.s - a.s)
+    .slice(0, 40)
+  const fused = new Map()
+  const RRF = 60
+  lexical.forEach((h, rank) => fused.set(h.index, (fused.get(h.index) || 0) + 1 / (RRF + rank)))
+  semantic.forEach((h, rank) => fused.set(h.i, (fused.get(h.i) || 0) + 1 / (RRF + rank)))
+  return [...fused.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, k)
+    .map(([i, score]) => ({ ...chunks[i], score }))
+}
+
+/**
+ * The index service. `projectIndex` is the project-memory service
+ * (`snapshot(root)` and `file(root, rel)`), so file discovery and text reading
+ * are the same ones the rest of the app uses.
+ */
+export function createCodebaseIndex({ cacheDir, projectIndex }) {
+  /** @type {Map<string, any>} */
+  const states = new Map()
+
+  const cacheFile = (root) => join(cacheDir, `${hashText(root)}.codebase.json`)
+
+  async function loadPersisted(root) {
+    try {
+      const data = JSON.parse(await fs.readFile(cacheFile(root), 'utf8'))
+      if (!data || data.root !== root || !data.files) return null
+      return data
+    } catch {
+      return null
+    }
+  }
+
+  function schedulePersist(state) {
+    if (state.persistTimer) clearTimeout(state.persistTimer)
+    state.persistTimer = setTimeout(() => {
+      state.persistTimer = null
+      void persist(state)
+    }, PERSIST_DELAY_MS)
+  }
+
+  async function persist(state) {
+    try {
+      await fs.mkdir(cacheDir, { recursive: true })
+      await fs.writeFile(
+        cacheFile(state.root),
+        JSON.stringify({
+          root: state.root,
+          files: state.files,
+          chunks: state.chunks,
+          vectors: Object.fromEntries(state.vectors), // a Map would serialise as {}
+          vectorModel: state.vectorModel,
+        }),
+      )
+    } catch {
+      /* the cache is an optimization; ignore write failures */
+    }
+  }
+
+  async function stateFor(root) {
+    let state = states.get(root)
+    if (!state) {
+      const saved = await loadPersisted(root)
+      state = {
+        root,
+        files: saved?.files ?? {}, // rel -> { mtime, size, ids: [] }
+        chunks: saved?.chunks ?? {}, // id -> { id, rel, startLine, endLine, text, hash }
+        vectors: new Map(Object.entries(saved?.vectors ?? {})), // id -> { hash, v: number[] }
+        vectorModel: saved?.vectorModel ?? null,
+        builtAt: 0,
+        building: null,
+        searchCache: null,
+        persistTimer: null,
+        version: 0,
+      }
+      states.set(root, state)
+    }
+    return state
+  }
+
+  /** Bring the index up to date with the files on disk (incremental). */
+  async function build(root, { force = false } = {}) {
+    const state = await stateFor(root)
+    if (state.building) return state.building
+    if (!force && state.builtAt && Date.now() - state.builtAt < REBUILD_AFTER_MS) return state.stats
+    state.building = (async () => {
+      const snap = await projectIndex.snapshot(root)
+      const entries = snap.entries || []
+      const seen = new Set()
+      let changed = 0
+      let chunkCount = Object.keys(state.chunks).length
+      for (const e of entries) {
+        seen.add(e.rel)
+        const prev = state.files[e.rel]
+        if (prev && prev.mtime === e.mtime && prev.size === e.size) continue
+        // Changed or new: drop the old chunks and re-chunk.
+        for (const id of prev?.ids ?? []) delete state.chunks[id]
+        chunkCount -= prev?.ids?.length ?? 0
+        state.files[e.rel] = { mtime: e.mtime, size: e.size, ids: [] }
+        changed++
+        if (chunkCount >= MAX_CHUNKS) continue
+        let file = null
+        try {
+          file = await projectIndex.file(root, e.rel)
+        } catch {
+          file = null
+        }
+        if (!file || file.binary || !file.content) continue
+        for (const c of chunkText(file.content)) {
+          const hash = hashText(c.text)
+          const id = `${e.rel}:${c.startLine}-${c.endLine}`
+          state.chunks[id] = { id, rel: e.rel, startLine: c.startLine, endLine: c.endLine, text: c.text, hash }
+          state.files[e.rel].ids.push(id)
+          chunkCount++
+        }
+      }
+      let removed = 0
+      for (const rel of Object.keys(state.files)) {
+        if (seen.has(rel)) continue
+        for (const id of state.files[rel].ids) delete state.chunks[id]
+        delete state.files[rel]
+        removed++
+      }
+      // Drop vectors whose chunk text changed or vanished.
+      for (const [id, rec] of state.vectors) {
+        const c = state.chunks[id]
+        if (!c || rec.hash !== c.hash) state.vectors.delete(id)
+      }
+      if (changed || removed) {
+        state.version++
+        state.searchCache = null
+        schedulePersist(state)
+      }
+      state.builtAt = Date.now()
+      state.stats = { files: Object.keys(state.files).length, chunks: Object.keys(state.chunks).length, changed, removed }
+      return state.stats
+    })()
+    try {
+      return await state.building
+    } finally {
+      state.building = null
+    }
+  }
+
+  async function chunkList(root) {
+    const state = await stateFor(root)
+    if (!state.searchCache || state.searchCache.version !== state.version) {
+      const list = Object.values(state.chunks).sort((a, b) => (a.rel === b.rel ? a.startLine - b.startLine : a.rel < b.rel ? -1 : 1))
+      state.searchCache = { version: state.version, list }
+    }
+    return { state, list: state.searchCache.list }
+  }
+
+  /**
+   * Ranked chunks for a query. `queryVector` (optional) must come from the model
+   * named by `model`; vectors stored for another model are ignored.
+   */
+  async function search(root, query, { k = 8, queryVector = null, model = null } = {}) {
+    await build(root)
+    const { state, list } = await chunkList(root)
+    const useVectors = queryVector && model && state.vectorModel === model && state.vectors.size > 0
+    const vectors = useVectors ? new Map([...state.vectors].map(([id, rec]) => [id, rec.v])) : null
+    const hits = hybridRank(list, query, { k, queryVector: useVectors ? queryVector : null, vectors })
+    return { hits, semantic: Boolean(useVectors), stats: state.stats ?? null }
+  }
+
+  /** Chunks that have no vector yet for `model`, for the client to embed. */
+  async function pending(root, { model, limit = 64 }) {
+    await build(root)
+    const { state, list } = await chunkList(root)
+    if (state.vectorModel !== model) {
+      state.vectors = new Map()
+      state.vectorModel = model
+      state.version++
+    }
+    const out = []
+    let embedded = 0
+    for (const c of list) {
+      if (state.vectors.has(c.id)) {
+        embedded++
+        continue
+      }
+      if (out.length < limit) out.push({ id: c.id, hash: c.hash, text: c.text })
+    }
+    return { items: out, total: list.length, embedded }
+  }
+
+  /** Store vectors computed by the client for `model`. Stale hashes are ignored. */
+  async function setVectors(root, { model, items }) {
+    const state = await stateFor(root)
+    if (state.vectorModel !== model) {
+      state.vectors = new Map()
+      state.vectorModel = model
+    }
+    let stored = 0
+    for (const item of items || []) {
+      const c = state.chunks[item.id]
+      if (!c || c.hash !== item.hash || !Array.isArray(item.vector)) continue
+      state.vectors.set(item.id, { hash: item.hash, v: item.vector })
+      stored++
+    }
+    schedulePersist(state)
+    return { stored, total: Object.keys(state.chunks).length }
+  }
+
+  return { build, search, pending, setVectors }
+}

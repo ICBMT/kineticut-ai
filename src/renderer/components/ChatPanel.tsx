@@ -28,6 +28,7 @@ import {
   X,
   Braces,
   Folder,
+  Search,
 } from 'lucide-react'
 import { renderMarkdown } from '../lib/markdown'
 import { buildUnderstanding, useKnowledgeStore } from '../lib/projectKnowledge'
@@ -785,7 +786,9 @@ export function ChatPanel() {
                       i === safeIndex ? 'bg-[var(--bg-active)] text-[var(--text)]' : 'text-[var(--text-dim)]',
                     )}
                   >
-                    {f.kind === 'folder' ? (
+                    {f.kind === 'codebase' ? (
+                      <Search size={12} className="shrink-0 text-[var(--accent)]" />
+                    ) : f.kind === 'folder' ? (
                       <Folder size={12} className="shrink-0 text-[var(--accent)]" />
                     ) : f.kind === 'symbol' ? (
                       <Braces size={12} className="shrink-0 text-[var(--accent)]" />

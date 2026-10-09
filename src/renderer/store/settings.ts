@@ -18,6 +18,8 @@ const PERSIST_KEYS = [
   'inlineCompletions',
   'agentAutoApprove',
   'agentReview',
+  'workspaceMode',
+  'embeddingModel',
   'agentMaxSteps',
   'theme',
   'accent',
@@ -43,6 +45,7 @@ export type AutoSaveMode = 'off' | 'afterDelay' | 'onFocusChange'
 export type ProviderStatus = 'unknown' | 'ok' | 'error'
 
 export type AgentReviewMode = 'batch' | 'each'
+export type WorkspaceMode = 'cursor' | 'classic'
 
 export interface SettingsState {
   loaded: boolean
@@ -54,6 +57,10 @@ export interface SettingsState {
   agentAutoApprove: boolean
   /** 'batch': stage agent writes and review them together at the end. 'each': a diff per write. */
   agentReview: AgentReviewMode
+  /** 'cursor': codebase index, agent searches on demand. 'classic': whole-file knowledge base in every prompt. */
+  workspaceMode: WorkspaceMode
+  /** Ollama embedding model for hybrid codebase search (e.g. nomic-embed-text). Null = keyword search only. */
+  embeddingModel: string | null
   agentMaxSteps: number
   theme: Theme
   accent: AccentId
@@ -107,6 +114,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   inlineCompletions: true,
   agentAutoApprove: false,
   agentReview: 'batch',
+  workspaceMode: 'cursor',
+  embeddingModel: null,
   agentMaxSteps: 16,
   theme: 'dark',
   accent: 'ocean',
@@ -149,6 +158,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       inlineCompletions: bag.inlineCompletions !== false,
       agentAutoApprove: bag.agentAutoApprove === true,
       agentReview: bag.agentReview === 'each' ? 'each' : 'batch',
+      workspaceMode: bag.workspaceMode === 'classic' ? 'classic' : 'cursor',
+      embeddingModel: typeof bag.embeddingModel === 'string' && bag.embeddingModel.trim() ? bag.embeddingModel.trim() : null,
       agentMaxSteps: (bag.agentMaxSteps as number) || 8,
       theme: bag.theme === 'light' ? 'light' : 'dark',
       accent: (bag.accent as AccentId) || 'ocean',

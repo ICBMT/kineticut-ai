@@ -419,6 +419,35 @@ export function SettingsPanel() {
               />
             </SettingRow>
             <SettingRow
+              title="Workspace mode"
+              desc="Cursor: the agent searches a codebase index and reads the lines it needs. Classic: the whole relevant files are put in every prompt."
+            >
+              <select
+                className="field-input !w-44 !py-1 !text-xs"
+                value={settings.workspaceMode}
+                onChange={(e) => settings.set('workspaceMode', e.target.value as 'cursor' | 'classic')}
+                aria-label="Workspace mode"
+              >
+                <option value="cursor">Cursor (codebase index)</option>
+                <option value="classic">Classic (whole files)</option>
+              </select>
+            </SettingRow>
+            <SettingRow
+              title="Embedding model"
+              desc="Optional. An Ollama embedding model (for example nomic-embed-text) adds search by meaning. Leave empty for keyword search only."
+            >
+              <input
+                className="field-input !w-44 !py-1 !text-xs"
+                placeholder="none (keyword search)"
+                defaultValue={settings.embeddingModel ?? ''}
+                onBlur={(e) => settings.set('embeddingModel', e.target.value.trim() || null)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                }}
+                aria-label="Embedding model"
+              />
+            </SettingRow>
+            <SettingRow
               title="Review agent changes"
               desc="Review at the end stages every agent write and lets you accept or reject each file and hunk together. Each write shows its own diff."
             >

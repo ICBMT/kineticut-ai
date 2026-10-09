@@ -20,6 +20,7 @@ import {
 } from '../lib/activity'
 import { currentBriefText } from '../lib/projectBrief'
 import { retrieveContextForQuery } from '../lib/projectKnowledge'
+import { cursorContextFor } from '../lib/cursorContext'
 import { useAppStore } from './app'
 import { resolveChatModel, useSettingsStore } from './settings'
 
@@ -369,7 +370,13 @@ export const useAIStore = create<AIState>()(
           const current = get().sessions.find((x) => x.id === sessionId)
           const brief = currentBriefText()
           // Retrieve the specific files relevant to this question.
-          const ctx = await retrieveContextForQuery(query)
+          // Cursor mode: the codebase index supplies snippets on demand. Classic mode
+          // injects the whole-file knowledge base as before.
+          const appState = useAppStore.getState()
+          const ctx =
+            useSettingsStore.getState().workspaceMode === 'cursor' && appState.folder
+              ? await cursorContextFor(appState.folder, query)
+              : await retrieveContextForQuery(query)
           const more = ctx.files.length > 4 ? ` +${ctx.files.length - 4} more` : ''
           log(
             ctx.files.length
