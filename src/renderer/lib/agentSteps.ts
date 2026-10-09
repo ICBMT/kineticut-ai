@@ -30,6 +30,10 @@ const VERBS: Record<string, { kind: StepKind; running: string; done: string }> =
   write_file: { kind: 'write', running: 'Writing', done: 'Wrote' },
   run_command: { kind: 'run', running: 'Running', done: 'Ran' },
   project_map: { kind: 'map', running: 'Mapping project', done: 'Mapped project' },
+  delete_file: { kind: 'edit', running: 'Deleting', done: 'Deleted' },
+  rename_file: { kind: 'edit', running: 'Renaming', done: 'Renamed' },
+  web_search: { kind: 'search', running: 'Searching the web for', done: 'Searched the web for' },
+  fetch_url: { kind: 'read', running: 'Fetching', done: 'Fetched' },
 }
 
 function parseArgs(json: string): Record<string, unknown> {
@@ -57,6 +61,8 @@ export function describeStep(name: string, argsJson: string, status: Status): St
   }
   if (name === 'list_dir' && !target) target = '.'
   if (name === 'project_map' && !target) target = 'workspace'
+  if (name === 'fetch_url') target = str(args.url) || target
+  if (name === 'rename_file') target = [str(args.from), str(args.to)].filter(Boolean).join(' → ')
   return { kind, verb, target, detail }
 }
 
