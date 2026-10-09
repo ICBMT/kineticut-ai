@@ -17,7 +17,7 @@ import { homedir } from 'node:os'
 import { join, relative } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import http from 'node:http'
-import { fetchPageText } from '../src/shared/webFetch.mjs'
+import { fetchPageText, searchWeb } from '../src/shared/webFetch.mjs'
 import {
   codebaseBuild,
   codebasePending,
@@ -361,6 +361,14 @@ const server = http.createServer(async (req, res) => {
       })
     }
 
+    if (path === '/api/web/search' && method === 'POST') {
+      const { query, apiKey, count } = await readJson(req)
+      try {
+        return sendJson(res, 200, await searchWeb(query, apiKey, { count }))
+      } catch (err) {
+        return sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) })
+      }
+    }
     if (path === '/api/web/fetch' && method === 'POST') {
       const { url } = await readJson(req)
       try {

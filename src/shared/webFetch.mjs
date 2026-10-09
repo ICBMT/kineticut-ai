@@ -86,3 +86,41 @@ export async function fetchPageText(url, opts = {}) {
     truncated: truncatedBytes || truncatedChars,
   }
 }
+
+export const BRAVE_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search'
+
+/**
+ * Web search through the Brave Search API (the user's own key). Returns the top
+ * results as { title, url, description }. `baseUrl` exists so tests can point at a stub.
+ */
+export async function searchWeb(query, apiKey, opts = {}) {
+  const q = String(query || '').trim()
+  if (!q) throw new Error('The search query is empty.')
+  if (!apiKey) throw new Error('No web search key is set. Add a Brave Search API key in Settings.')
+  const count = Math.min(Math.max(opts.count ?? 5, 1), 10)
+  const url = new URL(opts.baseUrl ?? BRAVE_SEARCH_URL)
+  url.searchParams.set('q', q)
+  url.searchParams.set('count', String(count))
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), opts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+  let res
+  try {
+    res = await fetch(url.href, {
+      signal: ctl.signal,
+      headers: { accept: 'application/json', 'x-subscription-token': apiKey },
+    })
+  } catch (err) {
+    throw new Error(ctl.signal.aborted ? 'The search timed out.' : `Search request failed: ${err.message}`)
+  } finally {
+    clearTimeout(timer)
+  }
+  if (res.status === 401 || res.status === 403) throw new Error('The search key was refused. Check it in Settings.')
+  if (!res.ok) throw new Error(`Search failed: HTTP ${res.status}`)
+  const data = await res.json()
+  const results = Array.isArray(data?.web?.results) ? data.web.results : []
+  return results.slice(0, count).map((r) => ({
+    title: String(r.title ?? '').replace(/<[^>]+>/g, ''),
+    url: String(r.url ?? ''),
+    description: String(r.description ?? '').replace(/<[^>]+>/g, ''),
+  }))
+}

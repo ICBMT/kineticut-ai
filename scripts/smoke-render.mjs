@@ -1099,7 +1099,7 @@ async function main() {
     const toolsOk =
       ['codebase_search', 'grep_search', 'file_search', 'read_file'].every((n) => toolNames.includes(n)) &&
       !toolNames.includes('search_code') &&
-      ['delete_file', 'rename_file'].every((n) => toolNames.includes(n))
+      ['delete_file', 'rename_file', 'fetch_url', 'web_search'].every((n) => toolNames.includes(n))
 
     // File search ranks exact and prefix name matches above fuzzy ones.
     const scoreOk =

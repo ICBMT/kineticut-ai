@@ -106,6 +106,18 @@ export const AGENT_TOOLS: AIToolDef[] = [
     },
   },
   {
+    name: 'web_search',
+    description:
+      'Search the web for current information: library versions, error messages, news. Returns the top results (title, address, snippet). Read a result with fetch_url when its snippet is not enough. Needs a web search key in Settings.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'What to search for, in a few words.' },
+      },
+      required: ['query'],
+    },
+  },
+  {
     name: 'fetch_url',
     description:
       'Read a web page as text: documentation, an API reference, a changelog. Use when the answer depends on something outside the workspace. The user is asked to confirm each address first.',
@@ -221,7 +233,7 @@ You know this project: its purpose, stack, directory map, relevant files and how
 How to work:
 - Understand before you change. Use the project context, project_map, codebase_search and grep_search to find the code that already does something similar, and follow its pattern (naming, folder layout, how it is registered or wired up).
 - To build a feature: plan the files in one short list, create the new files with create_file, then wire them into the existing code (routes, registries, imports, menus, commands) with edit_file.
-- For library or API questions, read the official docs with fetch_url when the workspace does not answer them.
+- For library or API questions, search with web_search and read the official docs with fetch_url when the workspace does not answer them.
 - To delete or rename a file, use delete_file or rename_file, then find and update references with grep_search and edit_file.
 - To change an existing file, use edit_file with old_text copied exactly from the file. Keep old_text small but unique. Use write_file only for a small file or a full rewrite. Never guess file contents: recall_file or read_file first.
 - To find code, call codebase_search first (it searches the whole project by meaning and keywords), then read only the lines you need with read_file start_line/end_line. Use grep_search for exact text and file_search to find a file by name.
@@ -465,6 +477,24 @@ async function executeToolCall(
           }
         }
         return proposeWrite(target, '', null, String(args.content ?? ''), 'Agent wants to create a file', ctx)
+      }
+      case 'web_search': {
+        const query = String(args.query || '').trim()
+        const key = useSettingsStore.getState().webSearchKey
+        if (!key) {
+          return {
+            result: 'Error: web search is not set up. Ask the user to add a Brave Search API key in Settings → Models & agent.',
+            error: true,
+          }
+        }
+        try {
+          const results = await api.web.search(query, key, 5)
+          if (results.length === 0) return { result: `No results for "${query}".` }
+          const lines = results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.description}`)
+          return { result: truncate(`Results for "${query}":\n\n${lines.join('\n\n')}`, 8000) }
+        } catch (err) {
+          return { result: `Error: ${err instanceof Error ? err.message : String(err)}`, error: true }
+        }
       }
       case 'fetch_url': {
         const url = String(args.url || '').trim()

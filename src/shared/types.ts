@@ -100,6 +100,13 @@ export interface ExecOptions {
   env?: Record<string, string>
 }
 
+/** One web search result (`web.search`). */
+export interface WebSearchResult {
+  title: string
+  url: string
+  description: string
+}
+
 /** A web page read as text (`web.fetch`). */
 export interface WebPage {
   url: string
@@ -242,6 +249,7 @@ export type SettingsBag = Record<string, unknown>
 export interface KineticAPI {
   web: {
     fetch(url: string): Promise<WebPage>
+    search(query: string, apiKey: string | null, count?: number): Promise<WebSearchResult[]>
   }
   system: {
     info(): Promise<SystemInfo>

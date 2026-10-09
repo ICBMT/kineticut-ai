@@ -521,6 +521,23 @@ export function SettingsPanel() {
                 <option value="each">Diff for each write</option>
               </select>
             </SettingRow>
+            <SettingRow
+              title="Web search key"
+              desc="Brave Search API key. Lets the agent search the web (web_search). Stored on this computer only."
+            >
+              <input
+                type="password"
+                className="field-input !w-44 !py-1 !text-xs"
+                placeholder="not set"
+                defaultValue={settings.webSearchKey ?? ''}
+                onBlur={(e) => settings.set('webSearchKey', e.target.value.trim() || null)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                }}
+                aria-label="Web search API key"
+                autoComplete="off"
+              />
+            </SettingRow>
             <SettingRow title="Agent max steps" desc="Maximum tool-use rounds per agent request.">
               <input
                 className="field-input !w-20 !py-1 !text-xs text-center"

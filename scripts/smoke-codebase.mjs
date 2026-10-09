@@ -11,7 +11,7 @@ import path from 'node:path'
 import { createCodebaseIndex, chunkText } from '../src/shared/codebaseIndex.mjs'
 import { scanProject } from '../src/shared/projectMemory.mjs'
 import http from 'node:http'
-import { fetchPageText, htmlToText } from '../src/shared/webFetch.mjs'
+import { fetchPageText, htmlToText, searchWeb } from '../src/shared/webFetch.mjs'
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
 const SKIP = new Set(['node_modules', '.git', 'dist', 'dist-web', 'out', 'build'])
@@ -156,6 +156,32 @@ check('binary responses are refused', /Not a text page/.test(notText))
 const missing = await fetchPageText(`${base}/nope`).then(() => 'read', (e) => e.message)
 check('HTTP errors are reported', missing === 'HTTP 404 Not Found')
 pageServer.close()
+
+// Web search: the key goes in a header, results are cleaned and capped.
+let seen = null
+const searchServer = http.createServer((req, res) => {
+  seen = { url: req.url, key: req.headers['x-subscription-token'] }
+  if (req.headers['x-subscription-token'] === 'bad') {
+    res.writeHead(401, { 'content-type': 'application/json' })
+    return res.end('{}')
+  }
+  res.writeHead(200, { 'content-type': 'application/json' })
+  const results = Array.from({ length: 8 }, (_, i) => ({
+    title: `<strong>Result</strong> ${i}`,
+    url: `https://example.com/${i}`,
+    description: `Snippet <b>${i}</b>`,
+  }))
+  res.end(JSON.stringify({ web: { results } }))
+})
+await new Promise((r) => searchServer.listen(0, '127.0.0.1', r))
+const searchBase = `http://127.0.0.1:${searchServer.address().port}/search`
+const found = await searchWeb('vite preview', 'key-123', { baseUrl: searchBase, count: 3 })
+check('web search: sends the query and key, returns cleaned results', seen.url.includes('q=vite+preview') && seen.key === 'key-123' && found.length === 3 && found[0].title === 'Result 0' && found[0].description === 'Snippet 0')
+const noKey = await searchWeb('x', null, { baseUrl: searchBase }).then(() => 'ran', (e) => e.message)
+check('web search: says so when no key is set', /No web search key is set/.test(noKey))
+const refusedKey = await searchWeb('x', 'bad', { baseUrl: searchBase }).then(() => 'ran', (e) => e.message)
+check('web search: a refused key gets a readable error', /key was refused/.test(refusedKey))
+searchServer.close()
 
 await fs.rm(cacheDir, { recursive: true, force: true })
 const failed = checks.filter(([, ok]) => !ok)

@@ -18,6 +18,7 @@ import type {
   SystemInfo,
   TerminalOptions,
   WebPage,
+  WebSearchResult,
 } from '../../shared/types'
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
@@ -109,6 +110,7 @@ export function createHttpApi(): KineticAPI {
   return {
     web: {
       fetch: (url) => post<WebPage>('/api/web/fetch', { url }),
+      search: (query, apiKey, count) => post<WebSearchResult[]>('/api/web/search', { query, apiKey, count }),
     },
     system: {
       info: () => http<SystemInfo>('/api/system'),

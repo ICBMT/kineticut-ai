@@ -52,6 +52,7 @@ ipcRenderer.on('win:maximized', (_e, maximized: boolean) => {
 const api: KineticAPI = {
   web: {
     fetch: (url) => ipcRenderer.invoke('web:fetch', url),
+    search: (query, apiKey, count) => ipcRenderer.invoke('web:search', { query, apiKey, count }),
   },
   system: {
     info: () => ipcRenderer.invoke('system:info'),

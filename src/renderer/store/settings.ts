@@ -21,6 +21,7 @@ const PERSIST_KEYS = [
   'agentReview',
   'workspaceMode',
   'embeddingModel',
+  'webSearchKey',
   'agentMaxSteps',
   'theme',
   'accent',
@@ -62,6 +63,8 @@ export interface SettingsState {
   workspaceMode: WorkspaceMode
   /** Ollama embedding model for hybrid codebase search (e.g. nomic-embed-text). Null = keyword search only. */
   embeddingModel: string | null
+  /** Brave Search API key for the agent's web_search tool. Stored on this computer. */
+  webSearchKey: string | null
   agentMaxSteps: number
   theme: Theme
   accent: AccentId
@@ -117,6 +120,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   agentReview: 'batch',
   workspaceMode: 'cursor',
   embeddingModel: null,
+  webSearchKey: null,
   agentMaxSteps: 16,
   theme: 'dark',
   accent: 'ocean',
@@ -161,6 +165,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       agentReview: bag.agentReview === 'each' ? 'each' : 'batch',
       workspaceMode: bag.workspaceMode === 'classic' ? 'classic' : 'cursor',
       embeddingModel: typeof bag.embeddingModel === 'string' && bag.embeddingModel.trim() ? bag.embeddingModel.trim() : null,
+      webSearchKey: typeof bag.webSearchKey === 'string' && bag.webSearchKey.trim() ? bag.webSearchKey.trim() : null,
       agentMaxSteps: (bag.agentMaxSteps as number) || 8,
       theme: bag.theme === 'light' ? 'light' : 'dark',
       accent: (bag.accent as AccentId) || 'ocean',
