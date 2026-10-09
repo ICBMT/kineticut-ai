@@ -1063,14 +1063,46 @@ async function main() {
       ruleSel.requested.map((r) => r.path).join() === '.cursor/rules/ask.mdc' &&
       ruleSelOther.always.map((r) => r.path).join() === '.cursor/rules/all.mdc'
 
-    codebaseOk = lexicalOk && semanticOk && rulesCursorOk
+    // Agent tools match Cursor's set: semantic, grep and file search, plus read_file ranges.
+    const agentMod = await server.ssrLoadModule('/ai/agent.ts')
+    const toolNames = agentMod.AGENT_TOOLS.map((t) => t.name)
+    const toolsOk =
+      ['codebase_search', 'grep_search', 'file_search', 'read_file'].every((n) => toolNames.includes(n)) &&
+      !toolNames.includes('search_code')
+
+    // File search ranks exact and prefix name matches above fuzzy ones.
+    const scoreOk =
+      agentMod.fileNameScore('codebase', 'src/lib/codebase.ts') > agentMod.fileNameScore('codebase', 'src/lib/recodebase.ts') &&
+      agentMod.fileNameScore('agnt', 'src/ai/agent.ts') > 0 &&
+      agentMod.fileNameScore('zzz', 'src/ai/agent.ts') === 0
+
+    // Embedding models are found by name and kept out of the chat model choices.
+    const em = await server.ssrLoadModule('/lib/embeddingModels.ts')
+    const embedOk =
+      em.pickEmbeddingModel(['llama3:8b', 'nomic-embed-text:latest', 'bge-m3']) === 'nomic-embed-text:latest' &&
+      em.pickEmbeddingModel(['llama3:8b']) === null &&
+      em.isEmbeddingModel('mxbai-embed-large') && !em.isEmbeddingModel('llama3:8b')
+
+    // Automatic detection: the mock Ollama lists an embedding model, so search by meaning is on by default.
+    const cb = await server.ssrLoadModule('/lib/codebase.ts')
+    const detected = await cb.detectEmbeddingModel(true)
+    const autoOk = detected === 'nomic-embed-text:latest'
+
+    // Agent mode gets no pre-injected snippets: the agent searches with its tools.
+    const cc = await server.ssrLoadModule('/lib/cursorContext.ts')
+    const agentCtx = await cc.cursorContextFor(path.resolve('.'), 'how is the codebase index built', { retrieve: false })
+    const chatCtx = await cc.cursorContextFor(path.resolve('.'), 'how is the codebase index built', { retrieve: true })
+    const retrievalOk = agentCtx.files.length === 0 && !/Relevant code from the codebase index/.test(agentCtx.block ?? '') && chatCtx.files.length > 0
+
+    codebaseOk = lexicalOk && semanticOk && rulesCursorOk && toolsOk && scoreOk && embedOk && autoOk && retrievalOk
+    if (!codebaseOk) console.log('  (auto/retrieval:', JSON.stringify({ autoOk, retrievalOk, detected }), ')')
     if (!codebaseOk) {
-      console.log('  (codebase parts:', JSON.stringify({ lexicalOk, semanticOk, rulesCursorOk }), ')')
+      console.log('  (codebase parts:', JSON.stringify({ lexicalOk, semanticOk, rulesCursorOk, toolsOk, scoreOk, embedOk }), ')')
     }
   } catch (err) {
     console.log('  (codebase check failed:', String(err).slice(0, 300), ')')
   }
-  checks.push(['codebase index: lexical search, embeddings, cursor rules', codebaseOk])
+  checks.push(['codebase index: search, embeddings, cursor rules, agent search tools', codebaseOk])
 
   if (monacoWorkerNoise) console.log(`  (ignored ${monacoWorkerNoise} jsdom timer error(s) raised inside monaco-editor)`)
   checks.push(['no runtime errors', realErrors.length === 0])

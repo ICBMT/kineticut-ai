@@ -58,11 +58,12 @@ export function StatusBar() {
             className="sb-item"
             title={
               codebase.embeddingModel
-                ? `Hybrid search with ${codebase.embeddingModel}. Chunks embedded: ${codebase.embedded} of ${codebase.total}.`
-                : 'Keyword codebase search. Set an embedding model in Settings for meaning-based search.'
+                ? `Search by meaning and keywords with ${codebase.embeddingModel}. Chunks embedded: ${codebase.embedded} of ${codebase.total}.`
+                : 'Keyword search only. Install an embedding model in Settings for search by meaning.'
             }
           >
-            {codebase.stats.files} files · {codebase.stats.chunks} chunks
+            {codebase.stats.files} files · {codebase.stats.chunks} chunks ·{' '}
+            {codebase.embeddingModel ? 'semantic' : 'keyword only'}
             {codebase.embeddingModel && codebase.total > 0 && codebase.embedded < codebase.total
               ? ` · embedding ${Math.round((codebase.embedded / codebase.total) * 100)}%`
               : ''}

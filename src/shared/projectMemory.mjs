@@ -26,6 +26,7 @@ import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import chokidar from 'chokidar'
+import { isIgnoreFile, loadIgnoreRules } from './ignoreRules.mjs'
 import { simpleGit } from 'simple-git'
 
 /* --------------------------------- limits ---------------------------------- */
@@ -264,6 +265,7 @@ export async function scanProject(root, { budget = MEMORY_BUDGET_BYTES } = {}) {
   const contents = new ContentCache(budget)
   const topLevel = []
   const queue = [{ dir: root, rel: '' }]
+  const ignore = await loadIgnoreRules(root)
   let count = 0
   let capped = false
   while (queue.length > 0 && !capped) {
@@ -280,10 +282,11 @@ export async function scanProject(root, { budget = MEMORY_BUDGET_BYTES } = {}) {
       const full = join(dir, entry.name)
       const rel = dirRel ? `${dirRel}/${entry.name}` : entry.name
       if (entry.isDirectory()) {
-        if (!SKIP_DIRS.has(entry.name)) queue.push({ dir: full, rel })
+        if (!SKIP_DIRS.has(entry.name) && !ignore.ignores(rel, true)) queue.push({ dir: full, rel })
         continue
       }
       if (!entry.isFile()) continue
+      if (ignore.ignores(rel, false)) continue
       if (++count > MAX_FILES) {
         capped = true
         break
@@ -306,7 +309,7 @@ export async function scanProject(root, { budget = MEMORY_BUDGET_BYTES } = {}) {
       if (count % YIELD_EVERY === 0) await yieldToEventLoop()
     }
   }
-  return { files, topLevel, contents, scannedAt: Date.now() }
+  return { files, topLevel, contents, scannedAt: Date.now(), ignore }
 }
 
 /* ------------------------------- derivations ------------------------------- */
@@ -581,6 +584,12 @@ export function createProjectIndex({ cacheDir }) {
       const upsert = async (full) => {
         const rel = relOf(full)
         if (!inside(rel)) return
+        // A change to the ignore rules themselves: rescan so the new rules apply.
+        if (isIgnoreFile(rel)) {
+          void rescanState(state)
+          return
+        }
+        if (state.ignore?.ignores(rel, false)) return
         let st
         try {
           st = await fs.stat(full)
@@ -635,8 +644,17 @@ export function createProjectIndex({ cacheDir }) {
     }
   }
 
+  async function rescanState(state) {
+    if (state.scanning) return state.scanning
+    state.scanning = runScan(state).finally(() => {
+      state.scanning = null
+    })
+    return state.scanning
+  }
+
   async function runScan(state) {
     const scanned = await scanProject(state.root)
+    state.ignore = scanned.ignore
     // Keep summaries from before the scan when the file is unchanged.
     for (const [rel, rec] of scanned.files) {
       const prev = state.files.get(rel)

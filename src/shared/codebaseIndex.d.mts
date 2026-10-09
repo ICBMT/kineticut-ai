@@ -7,6 +7,7 @@ export interface CodeChunk {
   startLine: number
   endLine: number
   text: string
+  symbol?: string | null
   score?: number
 }
 
@@ -20,7 +21,9 @@ export interface CodebaseStats {
 export const CHUNK_LINES: number
 export const CHUNK_MAX_CHARS: number
 export function tokenize(text: string): string[]
-export function chunkText(text: string): { startLine: number; endLine: number; text: string }[]
+export function chunkText(
+  text: string,
+): { startLine: number; endLine: number; text: string; symbol: string | null }[]
 export function hashText(text: string): string
 
 export interface CodebaseIndexService {

@@ -96,8 +96,12 @@ export function summarizeToolResult(name: string, result: string, error?: boolea
       return plural(lines, 'line', 'lines')
     case 'list_dir':
       return plural(nonEmpty, 'entry', 'entries')
-    case 'search_code':
+    case 'grep_search':
       return plural(nonEmpty, 'match', 'matches')
+    case 'codebase_search':
+      return plural(nonEmpty, 'result', 'results')
+    case 'file_search':
+      return plural(nonEmpty, 'file', 'files')
     default:
       return firstLine(result).slice(0, 80) || 'done'
   }

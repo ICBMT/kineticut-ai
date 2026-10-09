@@ -1,11 +1,14 @@
 /**
- * Codebase index: the workspace split into overlapping line chunks, searchable
- * by keyword (BM25) and, when an embedding model is configured, by meaning.
+ * Codebase index: the workspace split into syntax-aware chunks (whole functions,
+ * classes and sections where they fit), searchable by keyword (BM25) and, when an
+ * embedding model is available, by meaning.
  *
  * This is the layer the agent uses to find code (`codebase_search`), the way
- * Cursor's codebase index does. It is incremental: a file is re-chunked only when
- * its mtime or size changes, and chunks are keyed by content hash, so embedding
- * vectors survive restarts and are recomputed only for chunks whose text changed.
+ * Cursor's codebase index does. It is incremental and content-addressed: a file
+ * is re-chunked only when its content hash changes (a save with no text change
+ * costs nothing), and chunks are keyed by content hash, so embedding vectors
+ * survive restarts and are recomputed only for chunks whose text changed. Files
+ * excluded by .gitignore or .cursorignore never enter the index.
  *
  * Shared by the Electron main process and the browser-preview dev server. It
  * reads files through a project-memory service, so it has no Electron dependency.
@@ -14,12 +17,14 @@ import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 
+/** A chunk never holds more lines than this; larger declarations are split at member boundaries. */
 export const CHUNK_LINES = 60
-export const CHUNK_STEP = 48
 export const CHUNK_MAX_CHARS = 3000
 /** Beyond this many chunks the index stops adding files (keeps memory bounded). */
 export const MAX_CHUNKS = 120_000
 const REBUILD_AFTER_MS = 2_000
+/** Bump when chunking or the cache layout changes: older caches are rebuilt once. */
+const INDEX_VERSION = 2
 const PERSIST_DELAY_MS = 1500
 
 const STOP = new Set([
@@ -48,19 +53,98 @@ export function tokenize(text) {
   return out
 }
 
-/** Overlapping windows of lines. Each chunk knows its line range. */
+/** A line that starts a top-level declaration (or a markdown section). */
+const TOP_DECL =
+  /^(?:export\s+|pub(?:\([^)]*\))?\s+|declare\s+|default\s+|async\s+)*(?:function|class|interface|type|enum|const|let|var|struct|trait|impl|fn|func|def|module|namespace|object|protocol|extension|package|@)\b|^#{1,3}\s|^#\[/
+/** A line that starts a member inside a declaration (method, nested function). */
+const MEMBER_DECL =
+  /^\s{1,8}(?:(?:public|private|protected|static|readonly|async|get|set|override|export|pub)\s+)*(?:function\s+|def\s+|fn\s+|func\s+)?[A-Za-z_$][\w$]*\s*(?:[<(:=]|\s*\()|^\s{1,8}(?:const|let|var|func|fn|def)\b|^\s{1,8}#{2,4}\s/
+/** Comment and decorator lines that belong to the declaration below them. */
+const ATTACHED = /^\s*(?:\/\/|\/\*|\*|#\[|@\w|#\s|#$|"""|\x27\x27\x27)/
+const SYMBOL = /(?:function|class|interface|type|enum|struct|trait|impl|fn|func|def|module|namespace|object)\s+([A-Za-z_$][\w$]*)|(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*[=:]/
+const HEADING = /^#{1,3}\s+(.+?)\s*$/
+
+/** The name a unit is known by: its declaration name, or its markdown heading. */
+function symbolOf(line) {
+  const h = HEADING.exec(line)
+  if (h) return h[1].slice(0, 80)
+  const m = SYMBOL.exec(line)
+  if (!m) return null
+  return (m[1] || m[2] || '').slice(0, 80) || null
+}
+
+/**
+ * Split text into chunks along syntax: top-level declarations start a new unit,
+ * comments and decorators stay with the declaration below them, small neighbouring
+ * units are packed together up to CHUNK_LINES, and a unit too large for one chunk
+ * is split at member boundaries. Each chunk records its line range and the
+ * symbol it starts with. No parser is needed, so any language is covered.
+ */
 export function chunkText(text) {
   const lines = String(text).split('\n')
-  const chunks = []
-  for (let start = 0; start < lines.length; start += CHUNK_STEP) {
-    const end = Math.min(lines.length, start + CHUNK_LINES)
-    const body = lines.slice(start, end).join('\n')
-    if (body.trim()) {
-      chunks.push({ startLine: start + 1, endLine: end, text: body.slice(0, CHUNK_MAX_CHARS) })
+  if (lines.length === 0) return []
+  // 1. Unit starts: every top-level declaration, moved up over its comments.
+  const starts = new Set([0])
+  lines.forEach((line, i) => {
+    if (i === 0 || !TOP_DECL.test(line)) return
+    let j = i
+    while (j > 0 && ATTACHED.test(lines[j - 1])) j--
+    starts.add(j)
+  })
+  const cuts = [...starts].sort((a, b) => a - b)
+  const units = cuts.map((start, k) => ({ start, end: k + 1 < cuts.length ? cuts[k + 1] : lines.length }))
+
+  // 2. Oversize units are split at member boundaries into pieces of at most CHUNK_LINES.
+  const pieces = []
+  for (const u of units) {
+    if (u.end - u.start <= CHUNK_LINES) {
+      pieces.push(u)
+      continue
     }
-    if (end >= lines.length) break
+    let from = u.start
+    while (from < u.end) {
+      const hardEnd = Math.min(u.end, from + CHUNK_LINES)
+      let end = hardEnd
+      if (hardEnd < u.end) {
+        // Prefer the last member start (or blank line) in the back half of the window.
+        for (let i = hardEnd - 1; i > from + CHUNK_LINES / 2; i--) {
+          if (MEMBER_DECL.test(lines[i]) || lines[i].trim() === '') {
+            end = i
+            break
+          }
+        }
+      }
+      pieces.push({ start: from, end })
+      from = end
+    }
   }
-  return chunks
+
+  // 3. Pack neighbouring pieces together while they fit in one chunk.
+  const chunks = []
+  let cur = null
+  for (const p of pieces) {
+    if (cur && cur.end === p.start && p.end - cur.start <= CHUNK_LINES) {
+      cur.end = p.end
+      continue
+    }
+    if (cur) chunks.push(cur)
+    cur = { start: p.start, end: p.end }
+  }
+  if (cur) chunks.push(cur)
+
+  // 4. Materialise: text, 1-based lines, and the symbol the chunk starts with.
+  const out = []
+  for (const c of chunks) {
+    const body = lines.slice(c.start, c.end).join('\n')
+    if (!body.trim()) continue
+    // The symbol is the chunk's first top-level declaration (or heading).
+    let symbol = null
+    for (let i = c.start; i < c.end && !symbol; i++) {
+      if (TOP_DECL.test(lines[i])) symbol = symbolOf(lines[i])
+    }
+    out.push({ startLine: c.start + 1, endLine: c.end, text: body.slice(0, CHUNK_MAX_CHARS), symbol })
+  }
+  return out
 }
 
 export function hashText(text) {
@@ -156,7 +240,7 @@ export function createCodebaseIndex({ cacheDir, projectIndex }) {
   async function loadPersisted(root) {
     try {
       const data = JSON.parse(await fs.readFile(cacheFile(root), 'utf8'))
-      if (!data || data.root !== root || !data.files) return null
+      if (!data || data.version !== INDEX_VERSION || data.root !== root || !data.files) return null
       return data
     } catch {
       return null
@@ -177,6 +261,7 @@ export function createCodebaseIndex({ cacheDir, projectIndex }) {
       await fs.writeFile(
         cacheFile(state.root),
         JSON.stringify({
+          version: INDEX_VERSION,
           root: state.root,
           files: state.files,
           chunks: state.chunks,
@@ -225,23 +310,37 @@ export function createCodebaseIndex({ cacheDir, projectIndex }) {
         seen.add(e.rel)
         const prev = state.files[e.rel]
         if (prev && prev.mtime === e.mtime && prev.size === e.size) continue
-        // Changed or new: drop the old chunks and re-chunk.
-        for (const id of prev?.ids ?? []) delete state.chunks[id]
-        chunkCount -= prev?.ids?.length ?? 0
-        state.files[e.rel] = { mtime: e.mtime, size: e.size, ids: [] }
-        changed++
-        if (chunkCount >= MAX_CHUNKS) continue
         let file = null
         try {
           file = await projectIndex.file(root, e.rel)
         } catch {
           file = null
         }
-        if (!file || file.binary || !file.content) continue
+        const contentHash = file && !file.binary && file.content ? hashText(file.content) : null
+        // Touched or re-saved with the same text: keep the chunks and vectors.
+        if (prev && contentHash && prev.hash === contentHash) {
+          prev.mtime = e.mtime
+          prev.size = e.size
+          continue
+        }
+        // Changed or new: drop the old chunks and re-chunk.
+        for (const id of prev?.ids ?? []) delete state.chunks[id]
+        chunkCount -= prev?.ids?.length ?? 0
+        state.files[e.rel] = { mtime: e.mtime, size: e.size, hash: contentHash, ids: [] }
+        changed++
+        if (chunkCount >= MAX_CHUNKS || !contentHash) continue
         for (const c of chunkText(file.content)) {
           const hash = hashText(c.text)
           const id = `${e.rel}:${c.startLine}-${c.endLine}`
-          state.chunks[id] = { id, rel: e.rel, startLine: c.startLine, endLine: c.endLine, text: c.text, hash }
+          state.chunks[id] = {
+            id,
+            rel: e.rel,
+            startLine: c.startLine,
+            endLine: c.endLine,
+            text: c.text,
+            hash,
+            symbol: c.symbol,
+          }
           state.files[e.rel].ids.push(id)
           chunkCount++
         }

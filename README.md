@@ -20,19 +20,23 @@ models via **Ollama**, frontier models (Claude, GPT, Gemini, …) via API. Built
   instruction and shows the change as an inline diff before anything is applied.
   Every agent turn is a **checkpoint**: the reply lists the files it changed, opens
   them, and **Undo changes** restores them (files you edited since are left alone).
-  **Project rules** are read into requests: `.cursor/rules/*.mdc` (with `alwaysApply`,
-  `globs` and `description` frontmatter, so a rule applies when you open a matching
-  file), plus `.kineticut/rules.md`, `AGENTS.md`, `.cursorrules` and
+- **Workspace connected to the AI, the way Cursor does it.** The project is indexed in
+  the background into syntax-aware chunks (whole functions and classes, carrying their
+  names) and kept current by content hash, so a save with no text change costs nothing.
+  Search by meaning is **on by default**: the best embedding model Ollama has installed
+  (for example `nomic-embed-text`) is used automatically, and Settings offers a one-click
+  install when none is. Keyword search always works and needs no AI call. Files matched by
+  `.gitignore` or `.cursorignore` are never indexed or searched.
+  The **agent finds code with its tools**, as Cursor's agent does: `codebase_search`
+  (by meaning and keywords), `grep_search` (exact text), `file_search` (file names),
+  and `read_file` with line ranges. Nothing is pasted into an agent prompt that it did
+  not ask for. Chat (no tools) gets the matching snippets up front. *Settings → Workspace
+  mode → Classic* restores the previous whole-file retrieval.
+- **Project rules like Cursor's.** `.cursor/rules/*.mdc` files with `alwaysApply`, `globs`
+  and `description` frontmatter: rules that apply to the open file go into every request,
+  and description-only rules are listed so the agent can read them when they are relevant.
+  Also read: `.kineticut/rules.md`, `AGENTS.md`, `.cursorrules` and
   `.github/copilot-instructions.md`. The command *Create Project Rules File* writes a starter.
-- **Codebase index, like Cursor's.** The project is split into chunks and indexed in the
-  background (incremental, so only changed files are re-read). A question searches the
-  index with keyword matching (BM25) and, when an embedding model is set in
-  *Settings → Embedding model* (for example `nomic-embed-text` on Ollama), also by
-  meaning, fused with reciprocal-rank fusion. The keyword path makes no AI call. Embeddings are
-  computed when the index builds, so a question adds one small embedding call at most.
-  The agent gets a `codebase_search` tool and reads only the line ranges it needs (`read_file`
-  takes `start_line` and `end_line`). *Settings → Workspace mode → Classic* restores the
-  previous whole-file retrieval.
 - **Chat shortcuts like Cursor's.** **Ctrl+L** focuses the chat, **Ctrl+I** opens the agent
   composer, and **Ctrl+Shift+L** attaches the selected code to the chat. The `@codebase`
   mention searches the whole index.
@@ -173,7 +177,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design and
 | `npm run dist` | Package installers with electron-builder |
 | `npm run typecheck` | TypeScript check |
 | `npm run smoke` | Headless render + regression test (needs `dev:web` running) |
-| `npm run smoke:codebase` | Codebase index test: keyword search, embeddings, restart (no browser) |
+| `npm run smoke:codebase` | Codebase index test: ignore files, content hashes, chunks, embeddings, restart (no browser) |
 | `npm run icon` | Regenerate `assets/icon.png` from `assets/icon.svg` |
 | `npm run mock:ollama` | Run only the mock Ollama server (:11434) |
 

@@ -152,6 +152,8 @@ export interface CodeChunk {
   startLine: number
   endLine: number
   text: string
+  /** The declaration or heading the chunk starts with, when there is one. */
+  symbol?: string | null
   score?: number
 }
 

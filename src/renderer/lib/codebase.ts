@@ -10,6 +10,8 @@ import { api } from '../api'
 import { aiFetch } from './aiFetch'
 import { languageForPath } from './languages'
 import { useSettingsStore } from '../store/settings'
+import { listModels } from '../ai/providers'
+import { pickEmbeddingModel } from './embeddingModels'
 import type { CodeChunk, CodebaseStats } from '../../shared/types'
 
 export type CodebasePhase = 'idle' | 'indexing' | 'ready' | 'error'
@@ -38,18 +40,53 @@ export const useCodebaseStatus = create<CodebaseStatusState>(() => ({
 const building = new Map<string, Promise<CodebaseStats | null>>()
 const embedding = new Set<string>()
 
-/** Embedding model for the workspace index: the configured one, on the Ollama provider. */
-export function embeddingConfig(): { baseUrl: string; model: string } | null {
+/**
+ * The embedding model for the workspace index, or null when none is available.
+ * An explicit model in Settings wins. Otherwise the best embedding model that
+ * Ollama has installed is used automatically, so search by meaning is on by
+ * default, the way Cursor's codebase search is. The installed list is read at
+ * most once a minute.
+ */
+export async function embeddingConfig(): Promise<{ baseUrl: string; model: string } | null> {
   const settings = useSettingsStore.getState()
-  const model = settings.embeddingModel?.trim()
-  if (!model) return null
   const ollama = settings.providers.find((p) => p.type === 'ollama')
   if (!ollama) return null
-  return { baseUrl: ollama.baseUrl.replace(/\/+$/, ''), model }
+  const baseUrl = ollama.baseUrl.replace(/\/+$/, '')
+  const explicit = settings.embeddingModel?.trim()
+  if (explicit) return { baseUrl, model: explicit }
+  const model = await detectEmbeddingModel()
+  return model ? { baseUrl, model } : null
+}
+
+let detection: { at: number; model: string | null } | null = null
+
+/** The embedding model Ollama has installed that the index would use, or null. */
+export async function detectEmbeddingModel(force = false): Promise<string | null> {
+  if (!force && detection && Date.now() - detection.at < 60_000) return detection.model
+  const settings = useSettingsStore.getState()
+  const ollama = settings.providers.find((p) => p.type === 'ollama')
+  let model: string | null = null
+  if (ollama) {
+    try {
+      model = pickEmbeddingModel(await listModels(ollama))
+    } catch {
+      model = null
+    }
+  }
+  detection = { at: Date.now(), model }
+  return model
+}
+
+/** Forget the detected model (after an embedding model is installed). */
+export function resetEmbeddingDetection(): void {
+  detection = null
 }
 
 /** Embed texts through Ollama's /api/embed. Null when the model is unavailable. */
-export async function embedTexts(texts: string[], cfg = embeddingConfig()): Promise<number[][] | null> {
+export async function embedTexts(
+  texts: string[],
+  cfg: { baseUrl: string; model: string } | null,
+): Promise<number[][] | null> {
   if (!cfg || texts.length === 0) return null
   try {
     const res = await aiFetch({
@@ -74,8 +111,8 @@ export function buildCodebase(folder: string): Promise<CodebaseStats | null> {
   const run = (async () => {
     try {
       const stats = await api.codebase.build(folder)
-      useCodebaseStatus.setState({ phase: 'ready', stats })
-      const cfg = embeddingConfig()
+      const cfg = await embeddingConfig()
+      useCodebaseStatus.setState({ phase: 'ready', stats, embeddingModel: cfg?.model ?? null })
       if (cfg) void embedInBackground(folder, cfg)
       return stats
     } catch (err) {
@@ -126,7 +163,7 @@ export async function searchCodebase(
   query: string,
   k = 8,
 ): Promise<{ hits: CodeChunk[]; semantic: boolean }> {
-  const cfg = embeddingConfig()
+  const cfg = await embeddingConfig()
   const queryVector = cfg ? ((await embedTexts([query], cfg)) ?? [null])[0] : null
   const res = await api.codebase.search(folder, query, {
     k,
@@ -142,7 +179,8 @@ export function formatHits(hits: CodeChunk[], maxChars = 9000): string {
   const parts: string[] = []
   let total = 0
   for (const h of hits) {
-    const block = `### ${h.rel}:${h.startLine}-${h.endLine}\n\`\`\`${languageForPath(h.rel)}\n${h.text}\n\`\`\``
+    const where = `${h.rel}:${h.startLine}-${h.endLine}${h.symbol ? ` (${h.symbol})` : ''}`
+    const block = `### ${where}\n\`\`\`${languageForPath(h.rel)}\n${h.text}\n\`\`\``
     if (total + block.length > maxChars) break
     parts.push(block)
     total += block.length

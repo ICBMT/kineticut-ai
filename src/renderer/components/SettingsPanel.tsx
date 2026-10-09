@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Check,
   Cloud,
@@ -21,6 +21,8 @@ import type { ProviderConfig, ProviderType } from '../ai/types'
 import { ACCENTS, ACCENT_IDS, EDITOR_FONTS, type EditorFontId } from '../lib/accents'
 import { cn } from '../lib/utils'
 import { useAppStore } from '../store/app'
+import { buildCodebase, detectEmbeddingModel, resetEmbeddingDetection } from '../lib/codebase'
+import { DEFAULT_EMBEDDING_MODEL } from '../lib/embeddingModels'
 import { useSettingsStore } from '../store/settings'
 import { ModelSelect } from './ModelSelect'
 import { EmptyState, IconButton, Segmented, Spinner, Toggle } from './ui'
@@ -175,6 +177,65 @@ function ProviderForm({
 }
 
 /* ------------------------------ ollama pull --------------------------------- */
+
+/** Which embedding model the codebase index uses, and a one-click install when there is none. */
+function EmbeddingStatus() {
+  const pinned = useSettingsStore((s) => s.embeddingModel)
+  const ollama = useSettingsStore((s) => s.providers.find((p) => p.type === 'ollama'))
+  const folder = useAppStore((s) => s.folder)
+  const [detected, setDetected] = useState<string | null | undefined>(undefined)
+  const [progress, setProgress] = useState<number | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    setDetected(undefined)
+    void detectEmbeddingModel(true).then((m) => {
+      if (alive) setDetected(m)
+    })
+    return () => {
+      alive = false
+    }
+  }, [pinned, ollama?.baseUrl])
+
+  const install = async () => {
+    if (!ollama || progress !== null) return
+    setProgress(0)
+    try {
+      await pullOllamaModel(ollama, DEFAULT_EMBEDDING_MODEL, (p) =>
+        setProgress(p.total ? Math.round((p.completed / p.total) * 100) : 0),
+      )
+      resetEmbeddingDetection()
+      const m = await detectEmbeddingModel(true)
+      setDetected(m)
+      if (folder) void buildCodebase(folder)
+      useAppStore.getState().toast({ kind: 'success', title: `Installed ${DEFAULT_EMBEDDING_MODEL}`, message: 'Indexing the project by meaning now.' })
+    } catch (err) {
+      useAppStore.getState().toast({
+        kind: 'error',
+        title: 'Install failed',
+        message: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setProgress(null)
+    }
+  }
+
+  if (!ollama) return <span className="text-[11px] text-[var(--text-3)]">Add an Ollama provider to use it</span>
+  if (detected === undefined) return <span className="text-[11px] text-[var(--text-3)]">Checking Ollama…</span>
+  if (pinned) return <span className="text-[11px] text-[var(--text-3)]">Pinned: {pinned}</span>
+  if (detected) return <span className="text-[11px] text-[var(--text-3)]">Automatic: using {detected}</span>
+  return (
+    <button
+      type="button"
+      className="btn btn-sm"
+      onClick={() => void install()}
+      disabled={progress !== null}
+      aria-label={`Install ${DEFAULT_EMBEDDING_MODEL}`}
+    >
+      {progress !== null ? `Installing ${DEFAULT_EMBEDDING_MODEL}… ${progress}%` : `Install ${DEFAULT_EMBEDDING_MODEL}`}
+    </button>
+  )
+}
 
 function PullModel({ provider }: { provider: ProviderConfig }) {
   const refresh = useSettingsStore((s) => s.refreshProviderModels)
@@ -434,18 +495,21 @@ export function SettingsPanel() {
             </SettingRow>
             <SettingRow
               title="Embedding model"
-              desc="Optional. An Ollama embedding model (for example nomic-embed-text) adds search by meaning. Leave empty for keyword search only."
+              desc="Search by meaning, not just keywords, the way Cursor's codebase search works. Automatic uses the best embedding model Ollama has installed. Type a model name to pin one; clear it to go back to automatic."
             >
-              <input
-                className="field-input !w-44 !py-1 !text-xs"
-                placeholder="none (keyword search)"
-                defaultValue={settings.embeddingModel ?? ''}
-                onBlur={(e) => settings.set('embeddingModel', e.target.value.trim() || null)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                }}
-                aria-label="Embedding model"
-              />
+              <div className="flex flex-col items-end gap-1">
+                <input
+                  className="field-input !w-44 !py-1 !text-xs"
+                  placeholder="auto"
+                  defaultValue={settings.embeddingModel ?? ''}
+                  onBlur={(e) => settings.set('embeddingModel', e.target.value.trim() || null)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                  }}
+                  aria-label="Embedding model"
+                />
+                <EmbeddingStatus />
+              </div>
             </SettingRow>
             <SettingRow
               title="Review agent changes"

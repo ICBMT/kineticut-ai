@@ -3,6 +3,7 @@ import { api } from '../api'
 import { DEFAULT_BASE_URLS, probeProvider } from '../ai/providers'
 import type { ProviderConfig } from '../ai/types'
 import type { AccentId, EditorFontId } from '../lib/accents'
+import { isEmbeddingModel } from '../lib/embeddingModels'
 
 export type Theme = 'dark' | 'light'
 export type Density = 'comfortable' | 'compact'
@@ -225,7 +226,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (res.ok && res.models) {
       set((s) => ({
         providerStatus: { ...s.providerStatus, [id]: 'ok' },
-        providers: s.providers.map((x) => (x.id === id ? { ...x, models: res.models! } : x)),
+        // Embedding models are used by the codebase index, not for chat.
+        providers: s.providers.map((x) =>
+          x.id === id ? { ...x, models: res.models!.filter((m) => !isEmbeddingModel(m)) } : x,
+        ),
       }))
       get().persist()
       return res.models

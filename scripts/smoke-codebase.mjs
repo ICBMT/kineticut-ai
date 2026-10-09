@@ -8,7 +8,8 @@
 import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { createCodebaseIndex } from '../src/shared/codebaseIndex.mjs'
+import { createCodebaseIndex, chunkText } from '../src/shared/codebaseIndex.mjs'
+import { scanProject } from '../src/shared/projectMemory.mjs'
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
 const SKIP = new Set(['node_modules', '.git', 'dist', 'dist-web', 'out', 'build'])
@@ -77,6 +78,55 @@ await new Promise((r) => setTimeout(r, 2500))
 const reloaded = createCodebaseIndex({ cacheDir, projectIndex })
 const after = await reloaded.search(root, 'persist', { k: 3, queryVector: embed('persist'), model: 'smoke-embed' })
 check('stored embeddings survive a restart', after.semantic === true)
+
+// Ignore rules: .gitignore and .cursorignore keep files out of the scan and the index.
+const ignoreRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'kc-ignore-'))
+await fs.mkdir(path.join(ignoreRoot, 'secret'), { recursive: true })
+await fs.mkdir(path.join(ignoreRoot, 'src'), { recursive: true })
+await fs.writeFile(path.join(ignoreRoot, '.gitignore'), 'secret/\n*.log\n')
+await fs.writeFile(path.join(ignoreRoot, '.cursorignore'), 'src/private.ts\n')
+await fs.writeFile(path.join(ignoreRoot, 'secret', 'key.ts'), 'export const key = 1\n')
+await fs.writeFile(path.join(ignoreRoot, 'debug.log'), 'noise\n')
+await fs.writeFile(path.join(ignoreRoot, 'src', 'private.ts'), 'export const hidden = 2\n')
+await fs.writeFile(path.join(ignoreRoot, 'src', 'public.ts'), 'export function visible() { return 3 }\n')
+const scanned = await scanProject(ignoreRoot)
+const scannedRels = [...scanned.files.keys()].sort()
+check('.gitignore and .cursorignore exclude files from the scan', JSON.stringify(scannedRels) === JSON.stringify(['.cursorignore', '.gitignore', 'src/public.ts']))
+// The index is fed by the real scanner, as in the app, so the same rules apply.
+const realProjectIndex = {
+  async snapshot(r) {
+    const s = await scanProject(r)
+    return { entries: [...s.files.values()].map((rec) => ({ path: rec.path, rel: rec.rel, size: rec.size, mtime: rec.mtime })) }
+  },
+  async file(r, rel) {
+    return { content: await fs.readFile(path.join(r, rel), 'utf8'), binary: false }
+  },
+}
+const ignoreIdx = createCodebaseIndex({ cacheDir: await fs.mkdtemp(path.join(os.tmpdir(), 'kc-ignore-cache-')), projectIndex: realProjectIndex })
+await ignoreIdx.build(ignoreRoot, { force: true })
+const leak = await ignoreIdx.search(ignoreRoot, 'hidden key', { k: 5 })
+const visible = await ignoreIdx.search(ignoreRoot, 'visible return', { k: 5 })
+check('ignored files never appear in search results', leak.hits.length === 0 && visible.hits.some((h) => h.rel === 'src/public.ts'))
+await fs.rm(ignoreRoot, { recursive: true, force: true })
+
+// Content hashes: touching a file without changing its text re-chunks nothing.
+const touchRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'kc-touch-'))
+await fs.writeFile(path.join(touchRoot, 'a.ts'), 'export function one() {\n  return 1\n}\n')
+const touchIdx = createCodebaseIndex({ cacheDir: await fs.mkdtemp(path.join(os.tmpdir(), 'kc-touch-cache-')), projectIndex })
+await touchIdx.build(touchRoot, { force: true })
+const later = new Date(Date.now() + 60_000)
+await fs.utimes(path.join(touchRoot, 'a.ts'), later, later)
+const touched = await touchIdx.build(touchRoot, { force: true })
+check('a save with the same text re-chunks nothing', touched.changed === 0)
+await fs.writeFile(path.join(touchRoot, 'a.ts'), 'export function one() {\n  return 2\n}\n')
+const edited = await touchIdx.build(touchRoot, { force: true })
+check('a real edit re-chunks the file', edited.changed === 1)
+await fs.rm(touchRoot, { recursive: true, force: true })
+
+// Syntax-aware chunks: declarations stay whole and carry their name.
+const sample = 'import x from "y"\n\n// adds two numbers\nexport function add(a, b) {\n  return a + b\n}\n\nexport class Box {\n  get() {\n    return 1\n  }\n}\n'
+const sampleChunks = chunkText(sample)
+check('chunks start at declarations and carry the symbol', sampleChunks.some((c) => c.symbol === 'add') && sampleChunks.every((c) => c.endLine - c.startLine < 60))
 
 await fs.rm(cacheDir, { recursive: true, force: true })
 const failed = checks.filter(([, ok]) => !ok)

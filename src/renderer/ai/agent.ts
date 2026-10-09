@@ -37,7 +37,7 @@ export const AGENT_TOOLS: AIToolDef[] = [
   {
     name: 'read_file',
     description:
-      'Read a file, or only the lines start_line to end_line (1-based, inclusive). Prefer a line range for large files: find the lines with codebase_search or search_code first.',
+      'Read a file, or only the lines start_line to end_line (1-based, inclusive). Prefer a line range for large files: find the lines with codebase_search or grep_search first.',
     parameters: {
       type: 'object',
       properties: {
@@ -62,13 +62,27 @@ export const AGENT_TOOLS: AIToolDef[] = [
     },
   },
   {
-    name: 'search_code',
-    description: 'Search for text across all workspace files (grep).',
+    name: 'grep_search',
+    description:
+      'Exact text search across the workspace files, like grep (case-insensitive literal match). Use it for identifiers, strings, and exact usages. Files excluded by .gitignore or .cursorignore are skipped.',
     parameters: {
       type: 'object',
       properties: {
         query: { type: 'string', description: 'Literal text to search for.' },
         path: { type: 'string', description: 'Optional directory to restrict the search to.' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'file_search',
+    description:
+      'Find project files by name or path fragment (fuzzy, like Cursor file search). Returns the best matching project paths. Use it to locate a file before reading it.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'A file name or part of a path, e.g. "codebase", "store/ai".' },
+        limit: { type: 'integer', description: 'Maximum paths to return (1-50). Default 20.' },
       },
       required: ['query'],
     },
@@ -168,10 +182,10 @@ export const AGENT_SYSTEM_PROMPT = `You are Kineticut AI Agent, an expert softwa
 You know this project: its purpose, stack, directory map, relevant files and how they connect are in the project context below. You can read any file from project memory instantly with recall_file, and you can change the project.
 
 How to work:
-- Understand before you change. Use the project context, project_map and search_code to find the code that already does something similar, and follow its pattern (naming, folder layout, how it is registered or wired up).
+- Understand before you change. Use the project context, project_map, codebase_search and grep_search to find the code that already does something similar, and follow its pattern (naming, folder layout, how it is registered or wired up).
 - To build a feature: plan the files in one short list, create the new files with create_file, then wire them into the existing code (routes, registries, imports, menus, commands) with edit_file.
 - To change an existing file, use edit_file with old_text copied exactly from the file. Keep old_text small but unique. Use write_file only for a small file or a full rewrite. Never guess file contents: recall_file or read_file first.
-- To find code, call codebase_search first (it searches the whole project by meaning and keywords), then read only the lines you need with read_file start_line/end_line. Use search_code for exact text.
+- To find code, call codebase_search first (it searches the whole project by meaning and keywords), then read only the lines you need with read_file start_line/end_line. Use grep_search for exact text and file_search to find a file by name.
 - The user reviews every change. A write is either shown in a diff at once, or "staged" for one review at the end (the tool result says which). Staged changes are not on disk yet, but later reads and edits see them. If the user rejects a change, do not repeat it: explain the change and ask how to proceed.
 - Verify when the project has a check (typecheck, tests, build): run it with run_command and fix what it reports. run_command is non-interactive only; never run destructive commands without asking first.
 - Answer concisely at the end: what you created or changed (with file paths), what you verified, and what the user should check next.`
@@ -255,6 +269,44 @@ export async function runAgent(args: AgentRunArgs): Promise<void> {
 
 /* ------------------------------ tool execution ----------------------------- */
 
+/** Project-relative, forward-slash form of a search result path. */
+function relFrom(file: string, folder: string | null): string {
+  let f = String(file).replace(/\\/g, '/').replace(/^\.\//, '')
+  if (folder) {
+    const root = folder.replace(/\\/g, '/').replace(/\/+$/, '')
+    if (f.startsWith(`${root}/`)) f = f.slice(root.length + 1)
+  }
+  return f
+}
+
+/** Project paths the index keeps (ignore rules already applied), or null when no index is ready. */
+async function indexedPaths(folder: string | null): Promise<Set<string> | null> {
+  if (!folder) return null
+  const snap = await api.projectIndex.get(folder).catch(() => null)
+  if (!snap) return null
+  return new Set(snap.entries.map((e) => e.rel))
+}
+
+/** How well a query matches a project path (0 = not at all). Name matches rank first. */
+export function fileNameScore(query: string, rel: string): number {
+  const r = rel.toLowerCase()
+  const base = r.slice(r.lastIndexOf('/') + 1)
+  if (base === query) return 100
+  if (base.startsWith(query)) return 80
+  if (base.includes(query)) return 60
+  if (r.includes(query)) return 45
+  const words = query.split(/\s+/).filter(Boolean)
+  if (words.length > 1 && words.every((w) => r.includes(w))) return 35
+  // Characters in order inside the file name (fuzzy).
+  let i = 0
+  for (const ch of query.replace(/\s+/g, '')) {
+    i = base.indexOf(ch, i)
+    if (i < 0) return 0
+    i++
+  }
+  return 15
+}
+
 async function executeToolCall(
   call: AIToolCall,
   ctx: ToolContext = {},
@@ -315,19 +367,35 @@ async function executeToolCall(
         const header = semantic ? 'Matches (keyword and meaning):' : 'Matches (keyword search):'
         return { result: truncate(`${header}\n\n${formatHits(hits, 40000)}`, 40000) }
       }
-      case 'search_code': {
-        const results = await api.search.query(
-          folder || String(args.path || '.'),
-          String(args.query || ''),
-          200,
-        )
+      case 'grep_search': {
+        const query = String(args.query || '')
+        if (!query.trim()) return { result: 'Error: query is empty.', error: true }
+        const root = args.path ? resolvePath(args.path) : folder || '.'
+        const indexed = await indexedPaths(folder)
+        const results = await api.search.query(root, query, 400)
         const lines: string[] = []
-        for (const r of results.slice(0, 30)) {
+        for (const r of results) {
+          if (indexed && !indexed.has(relFrom(r.file, folder))) continue
           for (const h of r.hits.slice(0, 5)) {
-            lines.push(`${r.file}:${h.line}:${h.column}: ${h.text.trim().slice(0, 200)}`)
+            lines.push(`${relFrom(r.file, folder)}:${h.line}:${h.column}: ${h.text.trim().slice(0, 200)}`)
           }
+          if (lines.length >= 120) break
         }
         return { result: truncate(lines.join('\n') || 'no matches', 20000) }
+      }
+      case 'file_search': {
+        const query = String(args.query || '').trim().toLowerCase()
+        if (!query) return { result: 'Error: query is empty.', error: true }
+        if (!folder) return { result: 'Error: no project is open.', error: true }
+        const snap = await api.projectIndex.get(folder).catch(() => null)
+        if (!snap) return { result: 'Error: the project index is not ready yet.', error: true }
+        const limit = Math.min(50, Math.max(1, Number(args.limit) || 20))
+        const ranked = snap.entries
+          .map((e) => ({ rel: e.rel, score: fileNameScore(query, e.rel) }))
+          .filter((x) => x.score > 0)
+          .sort((a, b) => b.score - a.score || a.rel.length - b.rel.length)
+          .slice(0, limit)
+        return { result: ranked.length ? ranked.map((x) => x.rel).join('\n') : `No project files match "${query}".` }
       }
       case 'write_file': {
         const target = resolvePath(args.path)

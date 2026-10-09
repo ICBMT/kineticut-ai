@@ -369,22 +369,26 @@ export const useAIStore = create<AIState>()(
           log('Searching the project knowledge base', 'info', { phase: 'context' })
           const current = get().sessions.find((x) => x.id === sessionId)
           const brief = currentBriefText()
-          // Retrieve the specific files relevant to this question.
-          // Cursor mode: the codebase index supplies snippets on demand. Classic mode
-          // injects the whole-file knowledge base as before.
+          // Cursor mode: chat gets the codebase snippets that match the question;
+          // agent mode searches the codebase with its own tools, so nothing is
+          // pre-injected for it. Classic mode injects the whole-file knowledge base.
           const appState = useAppStore.getState()
-          const ctx =
-            useSettingsStore.getState().workspaceMode === 'cursor' && appState.folder
-              ? await cursorContextFor(appState.folder, query)
-              : await retrieveContextForQuery(query)
+          const cursorMode = useSettingsStore.getState().workspaceMode === 'cursor' && Boolean(appState.folder)
+          const ctx = cursorMode
+            ? await cursorContextFor(appState.folder!, query, { retrieve: mode !== 'agent' })
+            : await retrieveContextForQuery(query)
           const more = ctx.files.length > 4 ? ` +${ctx.files.length - 4} more` : ''
-          log(
-            ctx.files.length
-              ? `Pulled ${ctx.files.length} relevant file${ctx.files.length === 1 ? '' : 's'}: ${ctx.files.slice(0, 4).map(fileBase).join(', ')}${more}`
-              : 'No indexed files matched — answering from the project brief',
-            ctx.files.length ? 'ok' : 'info',
-            { contextFiles: ctx.files },
-          )
+          if (cursorMode && mode === 'agent') {
+            log('Agent mode: the agent searches the codebase with its tools as it works', 'info')
+          } else {
+            log(
+              ctx.files.length
+                ? `Pulled ${ctx.files.length} relevant file${ctx.files.length === 1 ? '' : 's'}: ${ctx.files.slice(0, 4).map(fileBase).join(', ')}${more}`
+                : 'No indexed files matched — answering from the project brief',
+              ctx.files.length ? 'ok' : 'info',
+              { contextFiles: ctx.files },
+            )
+          }
 
           const baseHistory: AIMessage[] = (current?.messages || [])
             .filter((m) => m.id !== assistantId && !m.pending)

@@ -38,6 +38,13 @@ const MODELS = [
     modified_at: new Date().toISOString(),
     details: { family: 'qwen2.5-coder', parameter_size: '32B', quantization_level: 'Q4_K_M' },
   },
+  {
+    // Embedding model: listed by Ollama, used by the codebase index, never offered for chat.
+    name: 'nomic-embed-text:latest',
+    size: 274_000_000,
+    modified_at: new Date().toISOString(),
+    details: { family: 'nomic-bert', parameter_size: '137M', quantization_level: 'F16' },
+  },
 ]
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, r && ms))

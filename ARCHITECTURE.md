@@ -62,9 +62,10 @@ src/renderer/
   - **Anthropic** — `/v1/messages` (streaming tool use included)
   - **Gemini** — `streamGenerate?alt=sse`
   - Model discovery (`/api/tags`, `/v1/models`, …) and Ollama `pull` with progress.
-- `agent.ts` is the **tool-use loop**: `list_dir`, `read_file`, `search_code`,
-  `write_file` (shown in a diff modal for approval), `run_command` (confirmation),
-  `open_file`. Bounded steps, abortable, tool results fed back to the model.
+- `agent.ts` is the **tool-use loop**: `codebase_search` (semantic and keyword search
+  over the codebase index), `grep_search` (exact text), `file_search` (file names),
+  `list_dir`, `read_file` (line ranges), `write_file` (shown in a diff modal for
+  approval), `run_command` (confirmation), `open_file`. Bounded steps, abortable, tool results fed back to the model.
 - `lib/aiFetch.ts` routes provider HTTP: through the main process in Electron
   (no CORS, can reach localhost), directly from the browser for external APIs,
   and through the dev-server proxy for localhost targets in the preview.
