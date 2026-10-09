@@ -4,6 +4,7 @@ import { runAgent, type AgentToolEvent } from '../ai/agent'
 import { api } from '../api'
 import { planUndo, recordWrite, describeChanges, type FileChange } from '../lib/checkpoints'
 import { loadRulesBlock } from '../lib/rules'
+import { onReviewApplied } from './review'
 import { streamChat } from '../ai/providers'
 import type { AIMessage, AIStreamEvent, AIToolCall } from '../ai/types'
 import {
@@ -83,11 +84,24 @@ export function trimForStorage(sessions: ChatSession[]): ChatSession[] {
   return out
 }
 
+/** A chat reply that is being generated right now. */
+export interface RunInfo {
+  startedAt: number
+  assistantId: string
+}
+
+/** Abort handles for running replies. Kept out of the store so state stays serializable. */
+const controllers = new Map<string, AbortController>()
+
 interface AIState {
   sessions: ChatSession[]
   activeId: string | null
+  /** True while any chat has a reply in progress (drives the activity dot and status bar). */
   streaming: boolean
-  abort: AbortController | null
+  /** Replies in progress, keyed by session id. Several chats can run at once. */
+  runs: Record<string, RunInfo>
+  /** Whether this chat has a reply in progress. */
+  isRunning(sessionId: string | null): boolean
   attach: { path: string; label: string; text: string } | null
 
   newSession(mode?: 'chat' | 'agent'): string
@@ -105,7 +119,8 @@ interface AIState {
   revertChanges(sessionId: string, messageId: string): Promise<void>
   /** Stream one assistant reply into `assistantId` for `query`. */
   runTurn(sessionId: string, assistantId: string, query: string): Promise<void>
-  stop(): void
+  /** Stop a chat's reply in progress (the active chat when no id is given). */
+  stop(sessionId?: string): void
   clearActive(): void
   removeSession(id: string): void
   activeSession(): ChatSession | null
@@ -170,7 +185,8 @@ export const useAIStore = create<AIState>()(
       sessions: [],
       activeId: null,
       streaming: false,
-      abort: null,
+      runs: {},
+      isRunning: (sessionId) => sessionId !== null && Boolean(get().runs[sessionId]),
       attach: null,
 
       newSession: (mode = 'chat') => {
@@ -199,7 +215,7 @@ export const useAIStore = create<AIState>()(
       },
 
       send: async (text) => {
-        if (get().streaming) return
+        if (get().isRunning(get().activeId)) return
         let session = get().activeSession()
         if (!session) {
           get().newSession('chat')
@@ -234,7 +250,7 @@ export const useAIStore = create<AIState>()(
       },
 
       regenerate: async () => {
-        if (get().streaming) return
+        if (get().isRunning(get().activeId)) return
         const session = get().activeSession()
         if (!session) return
         let idx = -1
@@ -256,7 +272,7 @@ export const useAIStore = create<AIState>()(
       },
 
       editAndResend: async (messageId, text) => {
-        if (get().streaming) return
+        if (get().isRunning(get().activeId)) return
         const session = get().activeSession()
         if (!session) return
         const idx = session.messages.findIndex((m) => m.id === messageId)
@@ -302,7 +318,8 @@ export const useAIStore = create<AIState>()(
         }
 
         const controller = new AbortController()
-        set({ streaming: true, abort: controller })
+        controllers.set(sessionId, controller)
+        set((s) => ({ streaming: true, runs: { ...s.runs, [sessionId]: { startedAt: Date.now(), assistantId } } }))
 
         const patch = (p: Partial<ChatMessage>) =>
           set((s) => ({ sessions: patchMessage(s.sessions, sessionId, assistantId, p) }))
@@ -333,7 +350,9 @@ export const useAIStore = create<AIState>()(
           update({ chars: content.length }, { content })
         }
 
+        let finalOutcome: 'done' | 'stopped' | 'error' = 'done'
         const finish = (outcome: 'done' | 'stopped' | 'error', error?: string) => {
+          finalOutcome = outcome
           const took = formatElapsed(Date.now() - activity.startedAt)
           const outcomes = {
             done: { phase: 'done', text: `Finished in ${took}`, kind: 'ok' },
@@ -458,6 +477,7 @@ export const useAIStore = create<AIState>()(
               signal: controller.signal,
               onEvent,
               onWrite: (write) => get().recordAgentWrite(sessionId, assistantId, write),
+              review: { sessionId, messageId: assistantId },
             })
           } else {
             for await (const evt of streamChat({
@@ -479,7 +499,20 @@ export const useAIStore = create<AIState>()(
             finish('error', err instanceof Error ? err.message : String(err))
           }
         } finally {
-          set({ streaming: false, abort: null })
+          controllers.delete(sessionId)
+          set((s) => {
+            const runs = { ...s.runs }
+            delete runs[sessionId]
+            return { runs, streaming: Object.keys(runs).length > 0 }
+          })
+          // A reply that finished while another chat was open says so.
+          if (sessionId !== get().activeId) {
+            const name = get().sessions.find((x) => x.id === sessionId)?.title || 'A chat'
+            const kind = finalOutcome === 'done' ? 'success' : finalOutcome === 'stopped' ? 'warning' : 'error'
+            const title =
+              finalOutcome === 'done' ? 'Agent finished' : finalOutcome === 'stopped' ? 'Agent stopped' : 'Agent failed'
+            useAppStore.getState().toast({ kind, title, message: `${name}: open the chat to see the result.` })
+          }
         }
       },
 
@@ -568,8 +601,9 @@ export const useAIStore = create<AIState>()(
         })
       },
 
-      stop: () => {
-        get().abort?.abort()
+      stop: (sessionId) => {
+        const id = sessionId ?? get().activeId
+        if (id) controllers.get(id)?.abort()
       },
 
       clearActive: () =>
@@ -599,3 +633,6 @@ export const useAIStore = create<AIState>()(
     },
   ),
 )
+
+// Changes the user accepts from the review are recorded as checkpoints on the reply that made them.
+onReviewApplied((e) => useAIStore.getState().recordAgentWrite(e.sessionId, e.messageId, e.write))

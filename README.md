@@ -23,6 +23,20 @@ models via **Ollama**, frontier models (Claude, GPT, Gemini, …) via API. Built
   **Project rules** (`.kineticut/rules.md`, `AGENTS.md`, `.cursorrules`,
   `.github/copilot-instructions.md`) are read into every request; the command
   *Create Project Rules File* writes a starter.
+- **Review every agent change at once.** By default (*Settings → Review agent changes →
+  Review at the end*) agent writes are **staged**, not written: later steps in the
+  turn build on the staged text, and a banner in the chat opens the review
+  (`Ctrl+Alt+R`). Accept or reject each hunk, accept or reject a whole file, then apply.
+  Applying re-checks the file on disk, so edits you made meanwhile are never overwritten.
+  Choose *Diff for each write* to get a diff per write instead.
+- **Several chats at once.** Each chat runs its own agent. Switch chats while one works;
+  the history shows a spinner on running chats, and a toast tells you when one finishes.
+- **Mention code in the composer.** `@path/to/file.ts` includes a file, `@src/lib/`
+  includes a folder's files with their summaries and symbols, and `@symbol:Name`
+  includes the code where that symbol is defined.
+- **Next-edit suggestions.** Inline suggestions follow what you are typing: they see your
+  last edits in the file (so a rename continues below), the signatures of the project
+  symbols the file imports, and can span several lines (`Tab` accepts).
 - **Starts empty, remembers everything.** Kineticut opens with no folder and no file;
   you choose what to work on. Your projects and chats are kept: **Projects & Chats**
   (`Ctrl+Alt+H`, or the history button in the AI chat header) lists every project you
@@ -104,6 +118,7 @@ built-in **mock Ollama** so the whole AI pipeline works out of the box.
 | `Ctrl+I` | Explain code with AI |
 | `Ctrl+K` | Edit the selection (or line) with AI, reviewed in place (`Ctrl+Enter` accept, `Esc` reject) |
 | `Ctrl+Shift+A` | Toggle agent mode |
+| `Ctrl+Alt+R` | Review staged AI changes (accept or reject per hunk) |
 | `Ctrl+Alt+B` | Toggle AI chat sidebar |
 | `Ctrl+Shift+I` | Format document |
 | `Ctrl+G` | Go to line |

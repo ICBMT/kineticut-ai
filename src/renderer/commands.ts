@@ -56,6 +56,7 @@ import { useAppStore } from './store/app'
 import { useAIStore } from './store/ai'
 import { useEditorStore } from './store/editor'
 import { useSettingsStore } from './store/settings'
+import { useReviewStore } from './store/review'
 
 export interface Command {
   id: string
@@ -307,6 +308,7 @@ export const COMMANDS: Command[] = [
   { id: 'ai.inlineEdit', title: 'Edit Selection with AI', category: 'AI', icon: Wand2, shortcut: 'Ctrl+K', keywords: 'inline edit rewrite change selection cursor', run: () => openInlineEdit(editorRef.current) },
   { id: 'ai.createRules', title: 'Create Project Rules File', category: 'AI', icon: FileCode, keywords: 'instructions agents rules conventions standing cursorrules', run: () => void createRulesFile() },
   { id: 'ai.undoLastChanges', title: 'Undo Last AI Changes', category: 'AI', icon: Undo2, keywords: 'revert checkpoint restore agent undo turn', run: () => undoLastAgentChanges() },
+  { id: 'ai.reviewChanges', title: 'Review Staged AI Changes', category: 'AI', icon: FileDiff, shortcut: 'Ctrl+Alt+R', keywords: 'review staged accept reject hunks apply batch agent diff', run: () => useReviewStore.getState().openReview(null) },
 
   // Settings / app
   { id: 'settings.open', title: 'Settings', category: 'Preferences', icon: Settings, shortcut: 'Ctrl+,', keywords: 'preferences providers models', run: () => useAppStore.getState().setSidebarView('settings') },
@@ -381,6 +383,7 @@ export const KEYBINDINGS: { combo: string; commandId: string }[] = [
   { combo: 'mod+g', commandId: 'editor.goToLine' },
   { combo: 'mod+alt+/', commandId: 'help.shortcuts' },
   { combo: 'mod+alt+h', commandId: 'view.history' },
+  { combo: 'mod+alt+r', commandId: 'ai.reviewChanges' },
 ]
 
 function eventCombo(e: KeyboardEvent): string | null {

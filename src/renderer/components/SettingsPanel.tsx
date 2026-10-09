@@ -418,6 +418,20 @@ export function SettingsPanel() {
                 label="Agent auto-approve"
               />
             </SettingRow>
+            <SettingRow
+              title="Review agent changes"
+              desc="Review at the end stages every agent write and lets you accept or reject each file and hunk together. Each write shows its own diff."
+            >
+              <select
+                className="field-input !w-44 !py-1 !text-xs"
+                value={settings.agentReview}
+                onChange={(e) => settings.set('agentReview', e.target.value as 'batch' | 'each')}
+                aria-label="Review agent changes"
+              >
+                <option value="batch">Review at the end</option>
+                <option value="each">Diff for each write</option>
+              </select>
+            </SettingRow>
             <SettingRow title="Agent max steps" desc="Maximum tool-use rounds per agent request.">
               <input
                 className="field-input !w-20 !py-1 !text-xs text-center"

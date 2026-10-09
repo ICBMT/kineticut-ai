@@ -33,6 +33,7 @@ import { useAppStore } from '../store/app'
 import { useSettingsStore } from '../store/settings'
 import { basename, relativePath } from '../lib/utils'
 import { hintFor } from '../lib/shortcuts'
+import { recordEdits } from '../lib/nextEdit'
 
 /** Parent directory of a path, shown muted beside a folder's name. */
 function parentOf(p: string): string {
@@ -429,10 +430,15 @@ export function EditorArea() {
     // Ctrl+K: edit the selection (or the current line) with AI, reviewed in place.
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () => openInlineEdit(editor))
 
-    editor.onDidChangeModelContent(() => {
+    editor.onDidChangeModelContent((e: any) => {
       const model = editor.getModel()
       if (!model || model.uri.scheme !== 'file') return
       const path = model.uri.fsPath
+      // Next-edit: remember what changed, and offer the next lines after a newline.
+      recordEdits(path, e.changes)
+      if (e.changes.some((c: { text: string }) => c.text.includes('\n'))) {
+        editor.trigger('kinetic', 'editor.action.inlineSuggest.trigger', {})
+      }
       const snap = getSnapshot(path)
       const dirty = snap === undefined ? false : model.getValue() !== snap
       useEditorStore.getState().markDirty(path, dirty)

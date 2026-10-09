@@ -12,6 +12,7 @@ export function StatusBar() {
   const problems = useAppStore((s) => s.problems)
   const sel = useAppStore((s) => s.selectionInfo)
   const streaming = useAIStore((s) => s.streaming)
+  const runningCount = useAIStore((s) => Object.keys(s.runs).length)
   const liveLabel = useAIStore((s) => currentActivityLabel(s))
   const settings = useSettingsStore()
   const chat = resolveChatModel(settings)
@@ -47,7 +48,7 @@ export function StatusBar() {
         {streaming && (
           <span className="sb-item" title="What the AI is doing right now" role="status" aria-live="polite">
             <Spinner size={11} />
-            {liveLabel ?? 'Thinking…'}
+            {runningCount > 1 ? `${runningCount} chats working` : (liveLabel ?? 'Thinking…')}
           </span>
         )}
         {chat.model && (

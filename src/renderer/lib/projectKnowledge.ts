@@ -14,6 +14,7 @@
  * Nothing here reads package scripts or guesses how to run the project: the
  * understanding comes from the code and its structure.
  */
+import { mentionBlockFor } from './mentionContext'
 import { create } from 'zustand'
 import { api } from '../api'
 import { streamChat } from '../ai/providers'
@@ -484,6 +485,10 @@ export async function retrieveContextForQuery(query: string, k = 5): Promise<Kno
       }
     }
   }
+
+  // `@folder/` and `@symbol:Name` mentions bring their code (no extra AI pass).
+  const mentionBlock = await mentionBlockFor(query, folder, entries)
+  if (mentionBlock) block += `\n\n${mentionBlock}`
 
   if (isProjectMetaQuery(query)) {
     if (snap.readme?.trim()) {

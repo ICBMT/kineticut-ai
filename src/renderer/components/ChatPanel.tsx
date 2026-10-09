@@ -26,6 +26,8 @@ import {
   Trash2,
   Wand2,
   X,
+  Braces,
+  Folder,
 } from 'lucide-react'
 import { renderMarkdown } from '../lib/markdown'
 import { buildUnderstanding, useKnowledgeStore } from '../lib/projectKnowledge'
@@ -35,13 +37,22 @@ import { cn, basename } from '../lib/utils'
 import { editorRef } from '../lib/editorRef'
 import { attachSelectionToChat, currentCodeAttachment } from '../lib/aiActions'
 import { expandSlash, filterSlash, slashQuery, type SlashCommand } from '../lib/slashCommands'
-import { activeMention, insertMention, loadMentionFiles, rankFiles, type MentionMatch } from '../lib/mentions'
+import {
+  activeMention,
+  insertMention,
+  loadMentionIndex,
+  rankMentions,
+  type MentionIndex,
+  type MentionItem,
+  type MentionMatch,
+} from '../lib/mentions'
 import { useAppStore } from '../store/app'
 import { useAIStore, type ChatMessage, type ToolEventEntry } from '../store/ai'
 import { describeChanges, type FileChange } from '../lib/checkpoints'
 import { relativePath } from '../lib/utils'
 import { ActivityPanel } from './ChatActivity'
 import { ModelSelect } from './ModelSelect'
+import { StagedBanner } from './ReviewPanel'
 import { EmptyState, IconButton, Segmented, Spinner } from './ui'
 
 /* ------------------------------ markdown body ------------------------------- */
@@ -515,7 +526,7 @@ const SUGGESTIONS = [
 
 type Menu =
   | { kind: 'slash'; items: SlashCommand[] }
-  | { kind: 'mention'; items: string[] }
+  | { kind: 'mention'; items: MentionItem[] }
   | null
 
 /* ---------------------------------- panel ----------------------------------- */
@@ -523,7 +534,8 @@ type Menu =
 export function ChatPanel() {
   const sessions = useAIStore((s) => s.sessions)
   const activeId = useAIStore((s) => s.activeId)
-  const streaming = useAIStore((s) => s.streaming)
+  // The composer tracks the chat on screen, so other chats can keep running.
+  const streaming = useAIStore((s) => s.isRunning(s.activeId))
   const attach = useAIStore((s) => s.attach)
   const ai = useAIStore()
   const folder = useAppStore((s) => s.folder)
@@ -533,7 +545,7 @@ export function ChatPanel() {
   const [menuIndex, setMenuIndex] = useState(0)
   const [menuDismissed, setMenuDismissed] = useState(false)
   const [mention, setMention] = useState<MentionMatch | null>(null)
-  const [mentionFiles, setMentionFiles] = useState<string[]>([])
+  const [mentionIndex, setMentionIndex] = useState<MentionIndex>({ files: [], folders: [], symbols: [] })
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -565,7 +577,7 @@ export function ChatPanel() {
       const items = filterSlash(slash)
       if (items.length) menu = { kind: 'slash', items }
     } else if (mention) {
-      const items = rankFiles(mentionFiles, mention.query)
+      const items = rankMentions(mentionIndex, mention.query)
       if (items.length) menu = { kind: 'mention', items }
     }
   }
@@ -584,7 +596,7 @@ export function ChatPanel() {
       setText(`/${cmd.name} `)
       setMenuDismissed(false)
     } else if (mention) {
-      const r = insertMention(text, mention, menu.items[i])
+      const r = insertMention(text, mention, menu.items[i].value)
       setText(r.text)
       setMention(null)
       requestAnimationFrame(() => inputRef.current?.setSelectionRange(r.caret, r.caret))
@@ -598,7 +610,7 @@ export function ChatPanel() {
     setMenuDismissed(false)
     const m = activeMention(value, caret)
     setMention(m)
-    if (m && folder) void loadMentionFiles(folder).then(setMentionFiles)
+    if (m && folder) void loadMentionIndex(folder).then(setMentionIndex)
   }
 
   const send = () => {
@@ -732,6 +744,7 @@ export function ChatPanel() {
       </div>
 
       <div className="relative border-t border-[var(--border-soft)] p-2 flex flex-col gap-1.5">
+        <StagedBanner />
         {menu && (
           <div
             role="listbox"
@@ -759,7 +772,7 @@ export function ChatPanel() {
                 ))
               : menu.items.map((f, i) => (
                   <button
-                    key={f}
+                    key={`${f.kind}:${f.value}`}
                     role="option"
                     aria-selected={i === safeIndex}
                     onMouseEnter={() => setMenuIndex(i)}
@@ -772,9 +785,15 @@ export function ChatPanel() {
                       i === safeIndex ? 'bg-[var(--bg-active)] text-[var(--text)]' : 'text-[var(--text-dim)]',
                     )}
                   >
-                    <FileCode size={12} className="shrink-0 text-[var(--accent)]" />
-                    <span className="truncate">{basename(f)}</span>
-                    <span className="truncate text-[var(--text-faint)] text-[10px]">{f}</span>
+                    {f.kind === 'folder' ? (
+                      <Folder size={12} className="shrink-0 text-[var(--accent)]" />
+                    ) : f.kind === 'symbol' ? (
+                      <Braces size={12} className="shrink-0 text-[var(--accent)]" />
+                    ) : (
+                      <FileCode size={12} className="shrink-0 text-[var(--accent)]" />
+                    )}
+                    <span className="truncate">{f.label}</span>
+                    <span className="truncate text-[var(--text-faint)] text-[10px]">{f.detail}</span>
                   </button>
                 ))}
           </div>

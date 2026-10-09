@@ -10,13 +10,23 @@ import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker'
 import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker'
 import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
 import { api } from '../api'
+import { useAppStore } from '../store/app'
+import {
+  buildInlinePrompt,
+  CompletionCache,
+  cleanCompletion,
+  COMPLETION_MAX_CHARS,
+  COMPLETION_MAX_TOKENS,
+  INLINE_SYSTEM_PROMPT,
+  recentEditsFor,
+  relatedContext,
+} from './nextEdit'
 import { streamChat } from '../ai/providers'
 import { ACCENTS, EDITOR_FONT_STACKS, type AccentId, type EditorFontId } from './accents'
 import { setSnapshot, getSnapshot, useEditorStore } from '../store/editor'
 import { resolveInlineModel, useSettingsStore } from '../store/settings'
 import { fixProblems } from './aiActions'
 import { languageForPath } from './languages'
-import { stripCodeFences } from './markdown'
 import { sleep } from './utils'
 
 let configured = false
@@ -198,16 +208,10 @@ export function monacoThemeName(): string {
 
 /* --------------------------- inline completions ----------------------------- */
 
-const INLINE_SYSTEM_PROMPT = `You are an inline code completion engine embedded in a code editor.
-Given the file path, the code before the cursor (<before>) and the code after the cursor (<after>), output ONLY the code that should be inserted at the cursor position.
-Rules:
-- Output only raw code. No explanations, no markdown fences, no comments about what you are doing.
-- Do not repeat code that is already present in <before> or <after>.
-- Match the surrounding indentation and style exactly.
-- If nothing should be inserted, output nothing.`
-
 let inlineSeq = 0
+const completionCache = new CompletionCache(60)
 
+/** Inline suggestions: the text around the cursor, the recent edits, and the imports' signatures. */
 function registerInlineCompletions(): void {
   monaco.languages.registerInlineCompletionsProvider(
     { pattern: '**' },
@@ -242,6 +246,30 @@ function registerInlineCompletions(): void {
           })
           .slice(0, 2000)
 
+        const toResult = (text: string) => ({
+          items: text
+            ? [
+                {
+                  insertText: text,
+                  range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column),
+                },
+              ]
+            : [],
+        })
+
+        // The same text around the cursor gets the same suggestion, without a request.
+        const key = completionCache.key(path, prefix, suffix)
+        const cached = completionCache.get(key)
+        if (cached !== undefined) return toResult(cached)
+
+        const related = await relatedContext(
+          useAppStore.getState().folder,
+          path,
+          model.getValue().slice(0, 12000),
+        )
+        if (seq !== inlineSeq || token.isCancellationRequested) return { items: [] }
+
+        const user = buildInlinePrompt({ path, prefix, suffix, recent: recentEditsFor(path), related })
         const controller = new AbortController()
         let completion = ''
         try {
@@ -250,17 +278,14 @@ function registerInlineCompletions(): void {
             model: inlineModel,
             messages: [
               { role: 'system', content: INLINE_SYSTEM_PROMPT },
-              {
-                role: 'user',
-                content: `<file path="${path}">\n<before>\n${prefix}\n</before>\n<after>\n${suffix}\n</after>\n</file>`,
-              },
+              { role: 'user', content: user },
             ],
             signal: controller.signal,
-            maxTokens: 256,
+            maxTokens: COMPLETION_MAX_TOKENS,
           })) {
             if (evt.type === 'text') {
               completion += evt.text
-              if (completion.length > 1500) {
+              if (completion.length > COMPLETION_MAX_CHARS + 500) {
                 controller.abort()
                 break
               }
@@ -272,21 +297,10 @@ function registerInlineCompletions(): void {
           /* aborted or failed — no completion */
         }
 
-        completion = stripCodeFences(completion.replace(/^\n+/, ''))
-        if (!completion.trim()) return { items: [] }
-        return {
-          items: [
-            {
-              insertText: completion,
-              range: new monaco.Range(
-                position.lineNumber,
-                position.column,
-                position.lineNumber,
-                position.column,
-              ),
-            },
-          ],
-        }
+        const cleaned = cleanCompletion(completion, prefix)
+        if (seq !== inlineSeq || token.isCancellationRequested) return { items: [] }
+        if (cleaned.trim()) completionCache.set(key, cleaned)
+        return toResult(cleaned.trim() ? cleaned : '')
       },
     },
   )

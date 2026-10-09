@@ -7,7 +7,7 @@ import { Bot, FolderOpen, FolderX, MessageSquare, Trash2 } from 'lucide-react'
 import { useAppStore } from '../store/app'
 import { useAIStore, type ChatSession } from '../store/ai'
 import { basename } from '../lib/utils'
-import { Modal, Segmented } from './ui'
+import { Modal, Segmented, Spinner } from './ui'
 
 type Tab = 'chats' | 'projects'
 
@@ -49,6 +49,7 @@ export function HistoryModal() {
   const removeRecentFolder = useAppStore((s) => s.removeRecentFolder)
   const sessions = useAIStore((s) => s.sessions)
   const activeId = useAIStore((s) => s.activeId)
+  const runs = useAIStore((s) => s.runs)
   const [tab, setTab] = useState<Tab>('chats')
   const [query, setQuery] = useState('')
 
@@ -172,6 +173,7 @@ export function HistoryModal() {
                   {g.sessions.map((s) => {
                     const Icon = s.mode === 'agent' ? Bot : MessageSquare
                     const isActive = s.id === activeId
+                    const running = Boolean(runs[s.id])
                     return (
                       <li key={s.id} className="flex items-center gap-2 group">
                         <button
@@ -183,6 +185,11 @@ export function HistoryModal() {
                         >
                           <Icon size={13} className="shrink-0" />
                           <span className="truncate flex-1">{sessionTitle(s)}</span>
+                          {running && (
+                            <span className="sb-item" role="status" aria-label="Working" title="Still working in the background">
+                              <Spinner size={11} />
+                            </span>
+                          )}
                           <span className="text-[11px] text-[var(--text-faint)] shrink-0">
                             {s.messages.length} msg · {relativeTime(lastActivity(s))}
                           </span>

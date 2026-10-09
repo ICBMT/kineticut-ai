@@ -11,6 +11,7 @@ import { applyTextEdit } from '../lib/textEdit'
 import { useAppStore } from '../store/app'
 import { useEditorStore } from '../store/editor'
 import { useSettingsStore } from '../store/settings'
+import { MAX_STAGED_CHARS, stagedContent, useReviewStore } from '../store/review'
 import { streamChat } from './providers'
 import type {
   AIMessage,
@@ -153,7 +154,7 @@ How to work:
 - Understand before you change. Use the project context, project_map and search_code to find the code that already does something similar, and follow its pattern (naming, folder layout, how it is registered or wired up).
 - To build a feature: plan the files in one short list, create the new files with create_file, then wire them into the existing code (routes, registries, imports, menus, commands) with edit_file.
 - To change an existing file, use edit_file with old_text copied exactly from the file. Keep old_text small but unique. Use write_file only for a small file or a full rewrite. Never guess file contents: recall_file or read_file first.
-- Every write is reviewed by the user in a diff. If a write is rejected, do not repeat it: explain the change and ask how to proceed.
+- The user reviews every change. A write is either shown in a diff at once, or "staged" for one review at the end (the tool result says which). Staged changes are not on disk yet, but later reads and edits see them. If the user rejects a change, do not repeat it: explain the change and ask how to proceed.
 - Verify when the project has a check (typecheck, tests, build): run it with run_command and fix what it reports. run_command is non-interactive only; never run destructive commands without asking first.
 - Answer concisely at the end: what you created or changed (with file paths), what you verified, and what the user should check next.`
 
@@ -180,10 +181,18 @@ export interface AgentRunArgs {
   onEvent: (evt: AIStreamEvent | AgentToolEvent) => void
   /** Called after every write the user approved, so the turn can be undone. */
   onWrite?: (write: AgentWrite) => void
+  /** The chat turn this run belongs to; staged changes are recorded against it. */
+  review?: { sessionId: string; messageId: string }
+}
+
+/** Per-run context for the write tools. */
+interface ToolContext {
+  onWrite?: (write: AgentWrite) => void
+  review?: { sessionId: string; messageId: string }
 }
 
 export async function runAgent(args: AgentRunArgs): Promise<void> {
-  const { provider, model, history, maxSteps = 8, signal, contextBrief, onEvent, onWrite } = args
+  const { provider, model, history, maxSteps = 8, signal, contextBrief, onEvent, onWrite, review } = args
   const systemPrompt = contextBrief
     ? `${AGENT_SYSTEM_PROMPT}\n\nProject context (the user's open workspace):\n${contextBrief}`
     : AGENT_SYSTEM_PROMPT
@@ -219,7 +228,7 @@ export async function runAgent(args: AgentRunArgs): Promise<void> {
     for (const call of assistant.toolCalls) {
       if (signal?.aborted) return
       onEvent({ type: 'tool_start', call })
-      const { result, error } = await executeToolCall(call, onWrite)
+      const { result, error } = await executeToolCall(call, { onWrite, review })
       onEvent({ type: 'tool_end', call, result, error })
       messages.push({ role: 'tool', toolCallId: call.id, name: call.name, content: result })
     }
@@ -230,7 +239,7 @@ export async function runAgent(args: AgentRunArgs): Promise<void> {
 
 async function executeToolCall(
   call: AIToolCall,
-  onWrite?: (write: AgentWrite) => void,
+  ctx: ToolContext = {},
 ): Promise<{ result: string; error?: boolean }> {
   let args: any
   try {
@@ -253,7 +262,11 @@ async function executeToolCall(
         return { result: truncate(text, 20000) }
       }
       case 'read_file': {
-        const res = await api.fs.read(resolvePath(args.path))
+        const target = resolvePath(args.path)
+        // Read what the agent has already proposed, so edits build on it.
+        const staged = stagedContent(target)
+        if (staged !== undefined) return { result: truncate(staged, 60000) }
+        const res = await api.fs.read(target)
         if (res.binary) return { result: 'Error: file is binary.', error: true }
         return { result: truncate(res.content, 60000) }
       }
@@ -275,7 +288,7 @@ async function executeToolCall(
         const target = resolvePath(args.path)
         const content = String(args.content ?? '')
         const prior = await readCurrent(target, true)
-        return proposeWrite(target, prior ?? '', prior, content, 'Agent wants to write a file', onWrite)
+        return proposeWrite(target, prior ?? '', prior, content, 'Agent wants to write a file', ctx)
       }
       case 'edit_file': {
         const target = resolvePath(args.path)
@@ -285,7 +298,7 @@ async function executeToolCall(
         }
         const edit = applyTextEdit(current, String(args.old_text ?? ''), String(args.new_text ?? ''), args.replace_all === true)
         if (!edit.ok) return { result: `Error: ${edit.reason}`, error: true }
-        const outcome = await proposeWrite(target, current, current, edit.content, 'Agent wants to edit a file', onWrite)
+        const outcome = await proposeWrite(target, current, current, edit.content, 'Agent wants to edit a file', ctx)
         if (outcome.error) return outcome
         return { result: `Edited ${args.path}: ${edit.replacements} replacement${edit.replacements === 1 ? '' : 's'}.` }
       }
@@ -298,7 +311,7 @@ async function executeToolCall(
             error: true,
           }
         }
-        return proposeWrite(target, '', null, String(args.content ?? ''), 'Agent wants to create a file', onWrite)
+        return proposeWrite(target, '', null, String(args.content ?? ''), 'Agent wants to create a file', ctx)
       }
       case 'run_command': {
         const command = String(args.command || '')
@@ -382,6 +395,9 @@ async function executeToolCall(
  * not exist yet. Binary files read as empty text: the agent cannot edit them.
  */
 async function readCurrent(target: string, missingAsNull = false): Promise<string | null> {
+  // A file the agent already changed in this review reads as its staged text.
+  const staged = stagedContent(target)
+  if (staged !== undefined) return staged
   try {
     const res = await api.fs.read(target)
     return res.binary ? '' : res.content
@@ -401,14 +417,32 @@ async function proposeWrite(
   before: string | null,
   content: string,
   title: string,
-  onWrite?: (write: AgentWrite) => void,
+  ctx: ToolContext = {},
 ): Promise<{ result: string; error?: boolean }> {
   const app = useAppStore.getState()
   const settings = useSettingsStore.getState()
   if (settings.agentAutoApprove) {
     await api.fs.write(target, content)
-    onWrite?.({ path: target, before, after: content })
+    ctx.onWrite?.({ path: target, before, after: content })
     return { result: `Wrote ${displayPath(target)} (${content.length} bytes)` }
+  }
+  // Review at the end: stage the change and keep going. The user accepts or
+  // rejects every staged file and hunk together, so the agent never waits on a dialog.
+  if (
+    settings.agentReview === 'batch' &&
+    ctx.review &&
+    content.length <= MAX_STAGED_CHARS
+  ) {
+    useReviewStore.getState().stage({
+      path: target,
+      before,
+      after: content,
+      sessionId: ctx.review.sessionId,
+      messageId: ctx.review.messageId,
+    })
+    return {
+      result: `Staged ${displayPath(target)} for the user's review. It is not written yet: the user will accept or reject it together with the other staged changes. Keep going; later edits to this file build on the staged version.`,
+    }
   }
   // The diff's Apply button calls onApply with what the user accepted (which
   // they may have edited in the diff) and then resolves true. Without onApply
@@ -435,7 +469,7 @@ async function proposeWrite(
       error: true,
     }
   }
-  onWrite?.({ path: target, before, after: written as string })
+  ctx.onWrite?.({ path: target, before, after: written as string })
   return { result: `Wrote ${displayPath(target)} (${(written as string).length} bytes)` }
 }
 

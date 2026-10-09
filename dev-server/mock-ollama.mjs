@@ -128,7 +128,7 @@ function cannedReply(messages, tools) {
 
   // Inline-completion style request (system prompt asks for raw code only).
   const system = messages.find((m) => m.role === 'system')?.content || ''
-  if (/inline code completion/i.test(system)) {
+  if (/inline code completion|next-edit engine/i.test(system)) {
     return { text: "return items.map((item) => item?.value ?? null).filter(Boolean)\n", toolCalls: null }
   }
 
@@ -152,7 +152,7 @@ function cannedReply(messages, tools) {
         toolCalls: [{ id: 'call_feat_1', name: 'create_file', arguments: JSON.stringify({ path: 'scratch-feature/greet.ts', content: 'export function greet(name: string) {\n  return `Hello, ${name}`\n}\n' }) }],
       }
     }
-    if (String(last.content).startsWith('Wrote ')) {
+    if (String(last.content).startsWith('Wrote ') || String(last.content).startsWith('Staged ')) {
       return {
         text: '',
         toolCalls: [{ id: 'call_feat_2', name: 'edit_file', arguments: JSON.stringify({ path: 'scratch-feature/greet.ts', old_text: 'return `Hello, ${name}`', new_text: 'return `Hello, ${name}!`' }) }],

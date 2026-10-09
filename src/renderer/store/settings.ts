@@ -17,6 +17,7 @@ const PERSIST_KEYS = [
   'inlineModel',
   'inlineCompletions',
   'agentAutoApprove',
+  'agentReview',
   'agentMaxSteps',
   'theme',
   'accent',
@@ -41,6 +42,8 @@ export type AutoSaveMode = 'off' | 'afterDelay' | 'onFocusChange'
 
 export type ProviderStatus = 'unknown' | 'ok' | 'error'
 
+export type AgentReviewMode = 'batch' | 'each'
+
 export interface SettingsState {
   loaded: boolean
   providers: ProviderConfig[]
@@ -49,6 +52,8 @@ export interface SettingsState {
   inlineModel: string | null
   inlineCompletions: boolean
   agentAutoApprove: boolean
+  /** 'batch': stage agent writes and review them together at the end. 'each': a diff per write. */
+  agentReview: AgentReviewMode
   agentMaxSteps: number
   theme: Theme
   accent: AccentId
@@ -101,6 +106,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   inlineModel: null,
   inlineCompletions: true,
   agentAutoApprove: false,
+  agentReview: 'batch',
   agentMaxSteps: 16,
   theme: 'dark',
   accent: 'ocean',
@@ -142,6 +148,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       inlineModel: (bag.inlineModel as string) || null,
       inlineCompletions: bag.inlineCompletions !== false,
       agentAutoApprove: bag.agentAutoApprove === true,
+      agentReview: bag.agentReview === 'each' ? 'each' : 'batch',
       agentMaxSteps: (bag.agentMaxSteps as number) || 8,
       theme: bag.theme === 'light' ? 'light' : 'dark',
       accent: (bag.accent as AccentId) || 'ocean',

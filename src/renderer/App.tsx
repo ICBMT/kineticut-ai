@@ -14,6 +14,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { ConfirmModal, DiffModal, PromptModal } from './components/modals'
 import { ShortcutsModal } from './components/ShortcutsModal'
 import { HistoryModal } from './components/HistoryModal'
+import { ReviewPanel } from './components/ReviewPanel'
 import { EditorArea } from './components/EditorArea'
 import { QuickOpen } from './components/QuickOpen'
 import { SideBar } from './components/SideBar'
@@ -129,6 +130,7 @@ export function App() {
         <PromptModal />
         <ShortcutsModal />
         <HistoryModal />
+        <ReviewPanel />
       </div>
     </ErrorBoundary>
   )

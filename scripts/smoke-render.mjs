@@ -481,7 +481,7 @@ async function main() {
       mentions.activeMention('no mention here', 10) === null &&
       mentions.insertMention('look at @src/ap', { start: 8, end: 16, query: 'src/ap' }, 'src/app.tsx').text ===
         'look at @src/app.tsx ' &&
-      mentions.rankFiles(['docs/readme.md', 'src/app.tsx', 'src/apple.ts'], 'app')[0] === 'src/app.tsx'
+      mentions.rankMentions({ files: ['docs/readme.md', 'src/app.tsx', 'src/apple.ts'], folders: [], symbols: [] }, 'app')[0]?.value === 'src/app.tsx'
     aiStore.getState().newSession('chat')
     await aiStore.getState().send('explain the terminal fallback in one line')
     const before = aiStore.getState().activeSession().messages
@@ -584,7 +584,8 @@ async function main() {
 
     // Retrieval: a question about the terminal should surface terminal files.
     const hits = knowledge.retrieveRelevantFiles(entries, 'how does the terminal panel work over websocket', 5)
-    retrievalOk = hits.slice(0, 3).some((h) => /TerminalPanel|main\/ipc/.test(h.entry.rel))
+    // Any terminal file counts (the terminal store, its panel, or the main-process IPC).
+    retrievalOk = hits.slice(0, 3).some((h) => /terminal|main\/ipc/i.test(h.entry.rel))
 
     if (!prescanOk || !retrievalOk) {
       const ks = knowledge.useKnowledgeStore.getState()
@@ -877,6 +878,100 @@ async function main() {
     console.log('  (workflow check failed:', String(err).slice(0, 300), ')')
   }
   checks.push(['agent checkpoints undo a turn, project rules load, inline edit guards', workflowOk])
+
+  // Batch review, mentions, next-edit and background runs: pure logic checks.
+  let reviewOk = false
+  try {
+    const dh = await server.ssrLoadModule('/lib/diffHunks.ts')
+    const mx = await server.ssrLoadModule('/lib/mentions.ts')
+    const mc = await server.ssrLoadModule('/lib/mentionContext.ts')
+    const ne = await server.ssrLoadModule('/lib/nextEdit.ts')
+    const rv = await server.ssrLoadModule('/store/review.ts')
+
+    // Hunks: one replaced line; accept/reject decisions rebuild exactly the chosen file.
+    const h1 = dh.computeHunks('a\nb\nc', 'a\nX\nc')
+    const hunksOk =
+      h1.length === 1 && h1[0].oldStart === 1 && h1[0].oldLines[0] === 'b' && h1[0].newLines[0] === 'X' &&
+      dh.applyHunkDecisions('a\nb\nc', h1, [true]) === 'a\nX\nc' &&
+      dh.applyHunkDecisions('a\nb\nc', h1, [false]) === 'a\nb\nc' &&
+      dh.computeHunks('same', 'same').length === 0 &&
+      dh.computeHunks('', 'new\nfile').length === 1
+
+    // Randomised round trip: accepting every hunk always gives the proposed file.
+    let seed = 7
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
+    const pick = () => ['a', 'b', 'c', 'd', ''][Math.floor(rnd() * 5)]
+    let roundTripOk = true
+    for (let i = 0; i < 300 && roundTripOk; i++) {
+      const A = Array.from({ length: Math.floor(rnd() * 12) }, pick)
+      const B = Array.from({ length: Math.floor(rnd() * 12) }, pick)
+      const orig = A.join('\n')
+      const prop = B.join('\n')
+      const hs = dh.computeHunks(orig, prop)
+      if (dh.applyHunkDecisions(orig, hs, hs.map(() => true)) !== prop) roundTripOk = false
+      if (dh.applyHunkDecisions(orig, hs, hs.map(() => false)) !== orig) roundTripOk = false
+    }
+
+    // Staging keeps the first original and moves only the staged text.
+    rv.useReviewStore.setState({ pending: {} })
+    rv.useReviewStore.getState().stage({ path: '/p/x.ts', before: 'one', after: 'two', sessionId: 's', messageId: 'm' })
+    rv.useReviewStore.getState().stage({ path: '/p/x.ts', before: 'two', after: 'three', sessionId: 's', messageId: 'm' })
+    const staged = rv.useReviewStore.getState().pending['/p/x.ts']
+    const stageOk =
+      staged.original === 'one' && staged.staged === 'three' && rv.stagedContent('/p/x.ts') === 'three' &&
+      staged.decisions.length === dh.computeHunks('one', 'three').length
+    rv.useReviewStore.setState({ pending: {} })
+
+    // Mentions: tokens, kinds and symbol search.
+    const toks = mx.parseMentionTokens('see @src/a.ts, then @symbol:foo. and @lib/ @src/a.ts')
+    const index = {
+      files: ['src/a.ts', 'src/lib/b.ts'],
+      folders: mx.folderCounts(['src/a.ts', 'src/lib/b.ts']),
+      symbols: [{ name: 'foo', rel: 'src/a.ts' }, { name: 'fooBar', rel: 'src/lib/b.ts' }],
+    }
+    const ranked = mx.rankMentions(index, 'lib')
+    const symRanked = mx.rankMentions(index, 'symbol:foo')
+    const mentionsOk =
+      toks.join('|') === 'src/a.ts|symbol:foo|lib/' &&
+      mx.folderCounts(['src/a.ts', 'src/lib/b.ts']).some((d) => d.path === 'src' && d.count === 2) &&
+      ranked.some((r) => r.kind === 'folder' && r.value === 'src/lib/') &&
+      symRanked.every((r) => r.kind === 'symbol') && symRanked[0].value === 'symbol:foo' &&
+      mx.insertMention('hi @sr', { start: 3, end: 6, query: 'sr' }, 'src/a.ts').text === 'hi @src/a.ts '
+
+    // Definition lookup for symbol mentions.
+    const defLines = ['const x = 1', 'export function render(a: number) {', '  return a', '}']
+    const methodLines = ['class A {', '  async load(id: string) {', '  }', '}']
+    const defOk = mc.definitionLine(defLines, 'render') === 1 && mc.definitionLine(methodLines, 'load') === 1 &&
+      mc.definitionLine(defLines, 'missing') === -1
+
+    // Next-edit: cleaning, cache, import signatures and the prompt.
+    const cleanOk =
+      ne.cleanCompletion('    bar\n\n', '    ') === 'bar' &&
+      ne.cleanCompletion('line1\nline2\n', 'x') === 'line1\nline2' &&
+      ne.cleanCompletion('x'.repeat(5000), '').length <= ne.COMPLETION_MAX_CHARS
+    const cache = new ne.CompletionCache(2)
+    cache.set('a', '1'); cache.set('b', '2'); cache.get('a'); cache.set('c', '3')
+    const cacheOk = cache.get('a') === '1' && cache.get('b') === undefined && cache.get('c') === '3'
+    const imps = ne.parseImports("import { a, b as c } from './x'\nimport d from './y'")
+    const sigs = ne.signaturesOf('export function a() {\nexport const z = 1\nexport function b(x) {', ['a'])
+    const nextOk =
+      imps.length === 2 && imps[0].spec === './x' && imps[0].names.join(',') === 'a,b' &&
+      sigs.join('|') === 'export function a()' &&
+      ne.buildInlinePrompt({ path: '/p/a.ts', prefix: 'p', suffix: 's', recent: [{ line: 3, inserted: 'Q', removed: 0, at: 0 }], related: '' }).includes('<recent_edits>')
+
+    // Background runs: per-session run map, abort per chat.
+    const ai = (await server.ssrLoadModule('/store/ai.ts')).useAIStore
+    const runsOk = typeof ai.getState().isRunning === 'function' && ai.getState().isRunning(null) === false &&
+      typeof ai.getState().stop === 'function'
+
+    reviewOk = hunksOk && roundTripOk && stageOk && mentionsOk && defOk && cleanOk && cacheOk && nextOk && runsOk
+    if (!reviewOk) {
+      console.log('  (review parts:', JSON.stringify({ hunksOk, roundTripOk, stageOk, mentionsOk, defOk, cleanOk, cacheOk, nextOk, runsOk }), ')')
+    }
+  } catch (err) {
+    console.log('  (review check failed:', String(err).slice(0, 300), ')')
+  }
+  checks.push(['batch review, mentions, next-edit and background runs', reviewOk])
 
   checks.push(['no runtime errors', realErrors.length === 0])
 
