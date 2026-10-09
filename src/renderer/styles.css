@@ -2023,3 +2023,29 @@ button {
   color: var(--text-dim);
   white-space: pre-wrap;
 }
+
+/* Settings pages: one nav row, one page at a time */
+.settings-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 12px 8px;
+}
+.settings-nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: none;
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+}
+.settings-nav-item:hover { color: var(--text); background: var(--bg-hover); }
+.settings-nav-item.is-active {
+  color: var(--text);
+  background: var(--bg-active);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}

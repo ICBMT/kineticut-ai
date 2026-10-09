@@ -350,7 +350,7 @@ function ProviderCard({ provider }: { provider: ProviderConfig }) {
           {provider.models.length > 0 ? `${provider.models.length} models` : 'no models'}
         </span>
       </div>
-      <div className="flex items-center gap-1 mt-1">
+      <div className="flex flex-wrap items-center gap-1 mt-1">
         <button className="btn !py-1 text-[11px]" onClick={() => settings.refreshProviderModels(provider.id)}>
           <RefreshCw size={11} />
           Refresh
@@ -416,16 +416,42 @@ const SHORTCUTS: [string, string][] = [
   ['Tab', 'Accept inline completion'],
 ]
 
+type SettingsPage = 'models' | 'appearance' | 'editor' | 'layout' | 'shortcuts'
+
+/** Settings pages, in the order of the nav. Each page is one group of the old single list. */
+const SETTINGS_PAGES: Array<{ id: SettingsPage; label: string; icon: LucideIcon }> = [
+  { id: 'models', label: 'Models & agent', icon: Cloud },
+  { id: 'appearance', label: 'Appearance', icon: Monitor },
+  { id: 'editor', label: 'Editor', icon: FileCode },
+  { id: 'layout', label: 'Layout', icon: PanelLeft },
+  { id: 'shortcuts', label: 'Shortcuts', icon: KeyRound },
+]
+
 export function SettingsPanel() {
   const settings = useSettingsStore()
   const [adding, setAdding] = useState(false)
+  const [page, setPage] = useState<SettingsPage>('models')
 
   return (
     <div className="sidebar-inner">
       <div className="panel-header">
         <span>Settings</span>
       </div>
+      <nav className="settings-nav" aria-label="Settings pages">
+        {SETTINGS_PAGES.map((p) => (
+          <button
+            key={p.id}
+            className={cn('settings-nav-item', page === p.id && 'is-active')}
+            aria-current={page === p.id ? 'page' : undefined}
+            onClick={() => setPage(p.id)}
+          >
+            <p.icon size={13} />
+            <span>{p.label}</span>
+          </button>
+        ))}
+      </nav>
       <div className="sidebar-scroll px-3">
+        {page === 'models' && <>
         <SectionTitle
           icon={Cloud}
           title="AI Providers"
@@ -541,6 +567,8 @@ export function SettingsPanel() {
           </div>
         </div>
 
+        </>}
+        {page === 'appearance' && <>
         <SectionTitle icon={Monitor} title="Appearance" />
         <div className="card">
           <SettingRow title="Color theme">
@@ -592,6 +620,8 @@ export function SettingsPanel() {
           </SettingRow>
         </div>
 
+        </>}
+        {page === 'editor' && <>
         <SectionTitle icon={FileCode} title="Editor" />
         <div className="card">
           <SettingRow title="Font family">
@@ -695,6 +725,8 @@ export function SettingsPanel() {
           )}
         </div>
 
+        </>}
+        {page === 'layout' && <>
         <SectionTitle icon={PanelLeft} title="Layout" />
         <div className="card">
           <SettingRow title="Project sidebar position" desc="Explorer / search / git / settings">
@@ -739,6 +771,8 @@ export function SettingsPanel() {
           </SettingRow>
         </div>
 
+        </>}
+        {page === 'shortcuts' && <>
         <SectionTitle icon={KeyRound} title="Keyboard shortcuts" />
         <div className="card grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
           {SHORTCUTS.map(([combo, label]) => (
@@ -748,6 +782,8 @@ export function SettingsPanel() {
             </div>
           ))}
         </div>
+
+        </>}
 
         <div className="h-4" />
       </div>
