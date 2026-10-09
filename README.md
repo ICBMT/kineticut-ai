@@ -138,11 +138,26 @@ built-in **mock Ollama** so the whole AI pipeline works out of the box.
 | `Ctrl+Shift+A` | Toggle agent mode |
 | `Ctrl+Alt+R` | Review staged AI changes (accept or reject per hunk) |
 | `Ctrl+Alt+B` | Toggle AI chat sidebar |
+| `Ctrl+Alt+H` | Projects and chat history (resume a past chat) |
 | `Ctrl+Shift+I` | Format document |
 | `Ctrl+G` | Go to line |
 | `Ctrl+,` | Settings |
 | `Ctrl+L` / `Ctrl+Alt+L` | Focus the AI chat input |
 | `Ctrl+Alt+/` | Keyboard shortcuts reference (searchable) |
+
+**Composer context.** Type `@` in the chat to add context to a message. Each mention shows as a chip you can remove:
+
+| Mention | Adds to the request |
+| --- | --- |
+| `@path/to/file.ts` | The file |
+| `@folder/` | The files in a folder, with their symbols |
+| `@symbol:Name` | The code where a symbol is defined |
+| `@codebase` | Search results for the question |
+| `@rule:name` | A `.cursor/rules/name.mdc` rule, applied to this request |
+| `@chat:title` | The latest messages of a past chat |
+| `@git` | The branch, changed files and their diffs |
+
+The agent can also read web pages with `fetch_url` (it asks first), and it has `delete_file` and `rename_file`. Each change it makes can be undone from its chat reply.
 | `Tab` | Accept inline completion |
 
 ## Project layout
