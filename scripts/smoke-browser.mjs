@@ -89,6 +89,22 @@ try {
   check('settings: Rules & index page has the workspace mode', (await page.locator('[aria-label="Workspace mode"]').count()) === 1)
   check('settings: the embedding model moved to Rules & index', (await page.locator('[aria-label="Embedding model"]').count()) === 1)
 
+  // 6. A recent folder opens in the explorer and its files list (fresh page, so no earlier layers are open).
+  const folderPage = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  await folderPage.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 })
+  await folderPage.waitForTimeout(800)
+  await folderPage.evaluate((folder) => {
+    const raw = localStorage.getItem('kineticut.app.v3')
+    const cur = raw ? JSON.parse(raw) : { state: {}, version: 0 }
+    cur.state = { ...(cur.state || {}), recentFolders: [folder] }
+    localStorage.setItem('kineticut.app.v3', JSON.stringify(cur))
+  }, process.cwd())
+  await folderPage.reload({ waitUntil: 'domcontentloaded' })
+  await folderPage.waitForTimeout(1000)
+  await folderPage.locator('button', { hasText: 'kineticut-ai' }).first().evaluate((el) => el.click())
+  const listed = await folderPage.getByText('README.md', { exact: true }).first().waitFor({ timeout: 10000 }).then(() => true, () => false)
+  check('explorer: a recent folder opens and lists its files', listed)
+
   check('no runtime errors in the console', errors.length === 0)
   if (errors.length) console.log(errors.slice(0, 5))
 } finally {
