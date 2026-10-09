@@ -29,6 +29,7 @@ import {
   Braces,
   Folder,
   Search,
+  type LucideIcon,
 } from 'lucide-react'
 import { renderMarkdown } from '../lib/markdown'
 import { buildUnderstanding, useKnowledgeStore } from '../lib/projectKnowledge'
@@ -38,6 +39,7 @@ import { cn, basename } from '../lib/utils'
 import { editorRef } from '../lib/editorRef'
 import { attachSelectionToChat, currentCodeAttachment } from '../lib/aiActions'
 import { expandSlash, filterSlash, slashQuery, type SlashCommand } from '../lib/slashCommands'
+import { parseMentionTokens, SYMBOL_PREFIX } from '../lib/mentions'
 import {
   activeMention,
   insertMention,
@@ -242,6 +244,48 @@ function ChangeCard({ sessionId, message }: { sessionId: string; message: ChatMe
           )
         })}
       </ul>
+    </div>
+  )
+}
+
+/* ------------------------------ composer chips ------------------------------ */
+
+function mentionKind(token: string): { icon: LucideIcon; label: string } {
+  if (token === 'codebase') return { icon: Search, label: 'Codebase' }
+  if (token.startsWith(SYMBOL_PREFIX)) return { icon: Braces, label: token.slice(SYMBOL_PREFIX.length) }
+  if (token.endsWith('/')) return { icon: Folder, label: token }
+  return { icon: FileCode, label: token }
+}
+
+/** Removes every `@token` from the text (the token's trailing space goes with it). */
+export function removeMention(text: string, token: string): string {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const re = new RegExp('(^|\\s)@' + escaped + '(?=\\s|$|[.,;:!?)\\]}\'"`])\\s?', 'g')
+  return text.replace(re, '$1').replace(/[ \t]{2,}/g, ' ')
+}
+
+/** Context the next message will carry, as removable chips: @mentions in the text. */
+function ComposerChips({ text, onChange }: { text: string; onChange(next: string): void }) {
+  const tokens = useMemo(() => parseMentionTokens(text), [text])
+  if (tokens.length === 0) return null
+  return (
+    <div className="composer-chips" aria-label="Context for this message">
+      {tokens.map((t) => {
+        const k = mentionKind(t)
+        return (
+          <span key={t} className="composer-chip" title={`@${t}`}>
+            <k.icon size={11} className="shrink-0 text-[var(--accent)]" />
+            <span className="truncate">{k.label}</span>
+            <button
+              className="composer-chip-x"
+              aria-label={`Remove ${k.label} from context`}
+              onClick={() => onChange(removeMention(text, t))}
+            >
+              <X size={10} />
+            </button>
+          </span>
+        )
+      })}
     </div>
   )
 }
@@ -685,14 +729,6 @@ export function ChatPanel() {
 
       <div className="px-2 pb-2 flex flex-col gap-2">
         <ModelSelect kind="chat" />
-        <Segmented
-          value={session?.mode || 'chat'}
-          options={[
-            { value: 'chat', label: 'Chat', icon: MessageSquare },
-            { value: 'agent', label: 'Agent', icon: Bot },
-          ]}
-          onChange={(m) => session && ai.setMode(session.id, m)}
-        />
       </div>
 
       <ProjectBriefCard />
@@ -802,6 +838,7 @@ export function ChatPanel() {
           </div>
         )}
         <div className="composer-card">
+        <ComposerChips text={text} onChange={(next) => setText(next)} />
         {attach && (
           <div className="flex items-center gap-2 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-elev)] px-2 py-1.5 text-[11px] text-[var(--text-dim)]">
             <FileCode size={12} className="shrink-0 text-[var(--accent)]" />
@@ -874,6 +911,19 @@ export function ChatPanel() {
               onClick={send}
             />
           )}
+        </div>
+        <div className="composer-foot">
+          <Segmented
+            value={session?.mode || 'chat'}
+            options={[
+              { value: 'chat', label: 'Chat', icon: MessageSquare },
+              { value: 'agent', label: 'Agent', icon: Bot },
+            ]}
+            onChange={(m) => session && ai.setMode(session.id, m)}
+          />
+          <span className="text-[10px] text-[var(--text-faint)]">
+            {streaming ? 'Working…' : session?.mode === 'agent' ? 'Edits wait for your review' : 'Enter to send'}
+          </span>
         </div>
         </div>
         <div className="text-[9.5px] text-[var(--text-faint)] px-0.5">

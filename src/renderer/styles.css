@@ -1887,3 +1887,31 @@ button {
 }
 .composer-card textarea:focus { outline: none; }
 .composer-row { display: flex; align-items: flex-end; gap: 4px; }
+.composer-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.composer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 3px 2px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-hover, rgba(255, 255, 255, 0.04));
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.composer-chip > span.truncate { min-width: 0; max-width: 220px; }
+.composer-chip-x {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  color: var(--text-faint);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.composer-chip-x:hover { color: var(--text); background: var(--bg-active, rgba(255, 255, 255, 0.08)); }
+.composer-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.composer-foot .segmented { transform: scale(0.92); transform-origin: left center; }

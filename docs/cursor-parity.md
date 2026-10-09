@@ -22,8 +22,8 @@ the fallback.
 | 4 | Agent tools: create, edit, write, run command with approval | Done | `src/renderer/ai/agent.ts` |
 | 5 | Agent tools: delete and rename files | Missing | — |
 | 6 | Agent tools: web search and docs | Missing | — |
-| 7 | Modes: Agent and Ask | Done as Agent and Chat. Manual mode missing. | `src/renderer/store/ai.ts` |
-| 8 | Composer context: @Codebase, @files, @folders, @symbols | Done | `src/renderer/lib/mentions*.ts` |
+| 7 | Modes: Agent and Ask | Done as Agent and Chat, switched from the composer footer. Manual mode missing. | `src/renderer/store/ai.ts`, `components/ChatPanel.tsx` |
+| 8 | Composer context: @Codebase, @files, @folders, @symbols, shown as removable chips | Done | `src/renderer/lib/mentions*.ts`, `components/ChatPanel.tsx` (`ComposerChips`) |
 | 9 | Composer context: @Past chats, @Docs, @Web, @Git | Missing | — |
 | 10 | Rules: `.cursor/rules/*.mdc` with `alwaysApply`, `globs`, `description` | Done. Manual `@rule` invocation missing. | `src/renderer/lib/rules.ts` |
 | 11 | Diff review: per-file and per-hunk accept or reject, apply | Done. The composer shows an "N files changed +a −r" bar with per-file accept and reject, Accept all and Reject all; the full review keeps per-hunk control. | `src/renderer/store/review.ts`, `components/ReviewPanel.tsx` (`ChangesBar`) |
